@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>请稍候 - 猎聘</title>
+<style>
+body{font-family:-apple-system,"PingFang SC",sans-serif;text-align:center;margin-top:120px;color:#333}
+.tip{font-size:16px;color:#666;margin-top:16px}
+</style>
+</head>
+<body>
+<div id="app">
+  <h2>访问验证</h2>
+  <p class="tip">系统检测到当前访问存在异常，正在跳转，请稍候…</p>
+  <p class="tip">如长时间未跳转，请刷新页面或稍后再试。</p>
+</div>
+<script>
+(function () {
+  var t = 1012695;
+  var next = "https://www.liepin.com/";
+  setTimeout(function () {
+    try { window.location.replace(next); } catch (e) { window.location.href = next; }
+  }, 1500);
+})();
+</script>
+</body>
+</html>

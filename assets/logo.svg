@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
+     role="img" aria-label="AI 求职助手：一枚被切成四格的方章，四格分别是过、否、疑、无">
+  <title>AI 求职助手</title>
+  <desc>硬性条件的四态方章。左上实心＝满足，右上斜纹＝不满足，左下空心＝还没查到，右下虚线＝不涉及。四态靠形制区分而不只靠颜色，缩到 16px 与色盲下都仍可辨。</desc>
+
+  <!-- 「否」格的斜纹。与 cockpit.css 的 repeating-linear-gradient(45deg) 同一形制 -->
+  <defs>
+    <pattern id="hatch" width="6" height="6" patternTransform="rotate(45)"
+             patternUnits="userSpaceOnUse">
+      <rect width="6" height="6" fill="#E86259"/>
+      <rect width="2.4" height="6" fill="#0D1218" opacity=".34"/>
+    </pattern>
+  </defs>
+
+  <!-- 舱内底。零圆角是这个项目的形制语言：核心动作是盖章／判定 -->
+  <rect width="64" height="64" fill="#0D1218"/>
+
+  <!-- 四格。十字缝用底色留出，读成「一枚章被切开」而不是四块砖 -->
+  <!-- 过 · 实心数据青 -->
+  <rect x="7"  y="7"  width="23" height="23" fill="#3CCBBF"/>
+  <!-- 否 · 斜纹红 -->
+  <rect x="34" y="7"  width="23" height="23" fill="url(#hatch)"/>
+  <!-- 疑 · 空心琥珀。内描边，缩小后仍留得住一圈 -->
+  <rect x="8.5"  y="35.5" width="20" height="20" fill="#E8AC3A" opacity=".10"/>
+  <rect x="8.5"  y="35.5" width="20" height="20" fill="none" stroke="#E8AC3A" stroke-width="3"/>
+  <!-- 无 · 虚线灰 -->
+  <rect x="35.5" y="35.5" width="20" height="20" fill="none"
+        stroke="#374553" stroke-width="2.5" stroke-dasharray="5 4"/>
+
+  <!-- 章的外框。双线内嵌，与 .stamp 的 inset box-shadow 同源 -->
+  <rect x="2.5" y="2.5" width="59" height="59" fill="none" stroke="#2A3542" stroke-width="3"/>
+</svg>

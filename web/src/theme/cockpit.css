@@ -1,0 +1,1947 @@
+/* ============================================================
+   仪表舱 · 视觉层
+   antd 的 token 负责组件内部；这一层负责「让它看起来不是 antd」：
+   自有布局、签名元素（四态方章 / 权重带）、以及对 antd 默认观感的定点覆盖。
+   所有颜色都取自 --ant-* 或下面这几个自有变量，不散落硬编码色值。
+   ============================================================ */
+
+:root {
+  --bay: #0d1218;
+  --panel: #151c25;
+  --panel-raised: #1c2530;
+  --edge: #2a3542;
+  --edge-strong: #374553;
+  --lit: #eaf1f7;
+  --dim: #a8b4c2;
+  --faint: #8494a5;
+  --data: #3ccbbf;
+  --data-deep: #1e6e68;
+  --caution: #e8ac3a;
+  --lock: #e86259;
+
+  --mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  --serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "SimSun", serif;
+
+  --gutter: clamp(16px, 2.5vw, 34px);
+  /* 只有上面这些。用 var(--别的) 不会报错，只会让整条声明**无效**，属性静默
+     回落到继承值——字还看得见，但你想要的层次没了，所以特别难发现。
+     实测一次抓出 15 处：--muted ×12、--line/--hair/--ink 各 1。
+     tests/test_css_and_cjk_text.py 会扫。 */
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bay);
+  color: var(--lit);
+  /* 数字要能纵向对齐比较——分数、权重、薪资都是。 */
+  font-variant-numeric: tabular-nums;
+}
+
+.cockpit { max-width: 1180px; margin: 0 auto; padding: var(--gutter); }
+
+/* 等宽小标签**只给数字和拉丁文用**：加大字距 + uppercase 是拉丁排版的做法，
+   套在中文上会拉成散架的一串。中文小标签一律走下面的 .kicker。
+
+   **字距归零。** 这个类原来带 0.17em——而全仓库 13 处用它的地方**全是纯数字**，
+   一个拉丁标签都没有。0.17em 摊在数字上就是把一个数拆成几个：屏幕上出现
+   「投出去超过 1 0 天」「6 6」「2 0 条」「8 2」，读的人得先把它们拼回去。
+   代价还不止于此——`.sec-count` 和 `.rail-step` 早就各自写了一遍
+   `letter-spacing: 0` 把它抵消掉，同一件事在三个地方各修一次，说明默认值选错了。
+   规则本身留着（中文不许进这个类，`tests/test_css_and_cjk_text.py` 盯着）；
+   真需要一个带字距的拉丁眉标时，那时再加一个类，别为不存在的用法预留。 */
+.mono-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 中文小标签：字距收到 0.04em，不转大写 */
+.kicker {
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+}
+
+/* ---------- 舱顶 ---------- */
+.mast {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding-bottom: 15px; border-bottom: 1px solid var(--edge);
+}
+.mast-word { font-size: 19px; font-weight: 700; letter-spacing: 0.04em; }
+/* 演示数据标记：显眼但不喧哗——它的作用是让人一眼知道"这些不是我的数据" */
+.demo-flag {
+  font-size: 12.5px; color: var(--caution); line-height: 1.5;
+  border: 1px dashed var(--caution); padding: 3px 9px;
+}
+.demo-flag code { font-family: var(--mono); font-size: 11.5px; color: var(--caution); }
+.loading { padding: 40px 0; color: var(--faint); font-size: 14px; }
+
+.mast-user { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.mast-user b { font-size: 15px; font-weight: 600; }
+
+/* ---------- 流水线读数 ---------- */
+.rail {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px;
+  background: var(--edge); border: 1px solid var(--edge); margin: 18px 0 20px;
+}
+/* 格子本身现在是 div：里面装「可点的计数按钮」+「这一步该敲什么」。
+   命令必须在按钮外面——套进去既是嵌套可交互元素，点复制还会顺手触发筛选。 */
+.rail-cell {
+  background: var(--panel); padding: 13px 15px 12px; position: relative;
+  display: flex; flex-direction: column;
+}
+/* 可点的那一块（数字 + 名字）。外观全部继承，只负责命中区域 */
+.rail-hit {
+  background: none; border: 0; padding: 0; margin: 0; text-align: left;
+  color: inherit; font: inherit; cursor: pointer; display: block; width: 100%;
+}
+.rail-hit:disabled { cursor: default; }
+/* ── 键盘焦点环的兜底 ──
+   这一条之前是**逐个元素写的**（`.rail-hit`、表格行、`.chan > summary`、
+   `.shelf-restore` 四处），于是谁加元素时记得写就有、忘了就没有。
+   实测（2026-08-18，Playwright 真按 Tab 走一遍）漏了四处：
+   表头的排序键（`.ant-table-column-has-sorters`）**一个环都没有**；
+   「不想看什么」和「另有 N 个已投出去」拿到的是浏览器默认的
+   `rgb(16,16,16) auto 1px`——**深色底上那圈近黑的 1px 等于没有**。
+   兜底一条，新加的元素默认就有；上面那几条各自的 offset 是有意调过的，留着。 */
+.cockpit :focus-visible { outline: 2px solid var(--data); outline-offset: 2px; }
+/* 表头排序键要单独一条：antd 写了
+   `.ant-table-wrapper .ant-table-thead th.ant-table-column-has-sorters { outline: none }`
+   （0,3,1），把上面的兜底（0,2,0）压掉了——不加这条，Tab 到「分 / 技能 / 年包」
+   时**一个环都没有**，键盘用户不知道光标在哪，也就不知道这几列能排序。
+   算出来的颜色最终是 antd 的灰而不是这里写的青（还有一条我在
+   `document.styleSheets` 里扫不到的规则在管颜色），但**环是实打实出现的**。
+   曾经误判过一次：以为灰环是 antd 自带的、这条是死代码，删掉之后环直接没了
+   ——**验证一条规则「有没有用」要看拿掉它会怎样，不是看它有没有被覆盖过**。 */
+.cockpit .shortlist .ant-table-thead th:focus-visible {
+  outline: 2px solid var(--data); outline-offset: -2px;
+}
+
+.rail-hit:focus-visible { outline: 2px solid var(--data); outline-offset: 2px; }
+.rail-v {
+  font-family: var(--mono); font-size: 34px; font-weight: 700;
+  line-height: 1.05; letter-spacing: -0.02em; margin-top: 3px;
+}
+.rail-n { font-size: 13px; color: var(--dim); }
+/* 步骤序号：等宽数字 + 一条短横，读作「第 N 步」而不占一行中文 */
+.rail-step {
+  /* 底色比正文区亮（卡片是 `--panel-raised`），`--faint` 压上去只有 4.29，
+     差一点点到 AA 的 4.5——11px 的字尤其不该踩线。上调一档到 `--dim`。 */
+  font-family: var(--mono); font-size: 11px; color: var(--dim);
+  font-variant-numeric: tabular-nums; padding-bottom: 2px;
+  border-bottom: 1px solid var(--edge-strong); display: inline-block; min-width: 9px;
+}
+.rail-cell[data-state="active"] .rail-v { color: var(--data); }
+.rail-cell[data-state="active"]::after {
+  content: ""; position: absolute; inset: auto 0 0 0; height: 2px; background: var(--data);
+}
+.rail-cell[data-state="zero"] .rail-v { color: var(--faint); }
+
+/* ---------- 下一步：全页唯一的实色强调块 ---------- */
+.nextstep {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  border: 1px solid var(--data-deep); background: rgba(60, 203, 191, 0.075);
+  padding: 13px 16px; margin-bottom: 12px;
+}
+.nextstep-text { font-size: 15px; font-weight: 600; flex: 1; min-width: 220px; }
+
+/* 「为什么」：它是这一句的脚注，不是一个平级动作 —— 所以做成一条下划线文字，
+   不是按钮。旁边那颗才是要他敲的东西，两个长得一样会分掉注意力。 */
+.nextstep-more {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; font-size: 12.5px; font-weight: 400;
+  color: var(--faint); text-decoration: underline; text-underline-offset: 3px;
+  flex-shrink: 0;
+}
+.nextstep-more:hover { color: var(--lit); }
+.nextstep-why {
+  border: 1px solid var(--edge); border-top: 0;
+  background: rgba(60, 203, 191, 0.03);
+  margin: -12px 0 12px; padding: 11px 16px;
+  font-size: 13.5px; line-height: 1.75; color: var(--dim);
+}
+
+/* ---------- 段标题 ---------- */
+.sec-head { display: flex; align-items: baseline; gap: 13px; margin-bottom: 13px; }
+.sec-head h2 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: 0.02em; }
+.sec-head .sec-note { margin-left: auto; font-size: 12.5px; color: var(--faint); }
+.sec-count {
+  font-family: var(--mono); font-size: 12.5px; font-weight: 700; color: var(--data);
+  font-variant-numeric: tabular-nums; border: 1px solid var(--data-deep);
+  padding: 1px 7px; letter-spacing: 0;
+}
+
+/* ============================================================
+   签名元素 1 · 硬门四态方章
+   四态靠**形制**区分，不只靠颜色（色盲可辨，且小尺寸下颜色会失效）：
+     实心 = 通过 · 斜纹 = 不通过 · 空心 = 未知 · 虚线 = 不适用
+   大尺寸才落印文（宋体单字）；小尺寸只留形制——17px 里塞中文字必然糊。
+   ============================================================ */
+.stamp {
+  position: relative; flex-shrink: 0; display: grid; place-items: center;
+  width: 30px; height: 30px;
+  font-family: var(--serif); font-size: 14px; font-weight: 700; line-height: 1;
+}
+.stamp > span { position: relative; z-index: 1; }
+.stamp::before { content: ""; position: absolute; inset: 0; border-radius: 2px; }
+
+.stamp[data-state="pass"] { color: var(--bay); }
+.stamp[data-state="pass"]::before {
+  background: var(--data);
+  box-shadow: inset 0 0 0 2px var(--bay), inset 0 0 0 3px var(--data);
+}
+.stamp[data-state="fail"] { color: #fff; }
+.stamp[data-state="fail"]::before {
+  background: var(--lock);
+  background-image: repeating-linear-gradient(45deg, rgba(0,0,0,.26) 0 2px, transparent 2px 5px);
+  box-shadow: inset 0 0 0 2px var(--bay), inset 0 0 0 3px var(--lock);
+}
+.stamp[data-state="unknown"] { color: var(--caution); }
+.stamp[data-state="unknown"]::before {
+  box-shadow: inset 0 0 0 1.5px var(--caution); background: rgba(232,172,58,.09);
+}
+.stamp[data-state="na"] { color: var(--faint); }
+.stamp[data-state="na"]::before { border: 1px dashed var(--edge-strong); }
+
+.stamp[data-size="sm"] { width: 17px; height: 17px; }
+.stamp[data-size="sm"] > span { display: none; }
+.stamp[data-size="sm"][data-state="pass"]::before { box-shadow: none; background: var(--data); }
+.stamp[data-size="sm"][data-state="fail"]::before { box-shadow: none; }
+.stamp[data-size="sm"][data-state="unknown"]::before {
+  box-shadow: inset 0 0 0 2px var(--caution); background: transparent;
+}
+.stamp[data-size="sm"][data-state="na"]::before { background: transparent; }
+
+/* 硬门格 */
+.gate-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(212px, 1fr)); gap: 9px;
+}
+.gate {
+  display: flex; align-items: center; gap: 11px; padding: 9px 12px;
+  background: var(--panel-raised); border: 1px solid var(--edge);
+}
+.gate-name { flex: 1; font-size: 14px; line-height: 1.35; }
+/* 注意：这里**不能**用 var(--mono)。内容是中文句子夹拉丁（「不限 211/985」），
+   等宽栈里中文会 fallback 到另一套字面，中英之间炸出大间隙。mono 只留给纯数字。 */
+.gate-why { display: block; font-size: 12px; color: var(--faint); margin-top: 2px; }
+/* 自造门名那一行的小标。灰而不弱：它要能被看见（那是要去改的证据），
+   但绝不能抢过判定章 —— 那一行本来就不该在这张表里。
+   不加字距：那条规矩只对拉丁文成立（AGENTS.md 末尾）。 */
+.gate-offspec { margin-left: 6px; font-size: 12px; color: var(--faint);
+  border: 1px solid var(--edge-strong); border-radius: 3px; padding: 0 4px;
+  vertical-align: 1px; white-space: nowrap; }
+/* assumed 的判定其实是「满足」，只是依据来自你资料里未确认的假设值 —— 所以走琥珀
+   （待确认），**不能**走红色：红色在本页只表示不合格，用在这里会让人以为这条挂了。 */
+.gate[data-flag="ask"] { border-color: var(--caution); }
+.gate[data-flag="ask"] .gate-why { color: var(--caution); }
+.gate[data-flag="unknown"] .gate-why { color: var(--caution); }
+.gate-note { margin: 12px 0 0; font-size: 13px; color: var(--dim); }
+
+
+/* 技能列：颜色只表达一件事——这个总分主要是谁撑起来的。
+   青 = 活对口但条件拖后腿；琥珀 = 条件好但活未必干得了；中性 = 两者一致。
+   不加箭头、不加图标：一个数 + 一种颜色已经说完了。 */
+.skill {
+  font-family: var(--mono); font-size: 17px; font-weight: 700;
+  font-variant-numeric: tabular-nums; cursor: help;
+  border-bottom: 1px dotted transparent;
+}
+.skill[data-tone="up"] { color: var(--data); border-bottom-color: var(--data-deep); }
+.skill[data-tone="down"] { color: var(--caution); border-bottom-color: var(--caution); }
+.skill[data-tone="flat"] { color: var(--dim); }
+/* 图例：直接用技能列的两种颜色，不另造符号 */
+.lg-up { color: var(--data); font-weight: 600; }
+.lg-down { color: var(--caution); font-weight: 600; }
+/* 年包：等宽数字便于上下对齐比较；按 12 薪估的用虚下划线提示「这是估的」 */
+.annual {
+  font-family: var(--mono); font-size: 14px; color: var(--lit);
+  font-variant-numeric: tabular-nums; white-space: nowrap; cursor: help;
+}
+/* 单位「万」比数字小一档是有意的层级，但 11px 是**汉字**，压在自家定的下限
+   （tokens.ts「低于 13 的中文在深底上读不清」）以下 —— 全页扫下来它是最后一个。
+   12px：仍然明显小于数字、层级不丢，字形不再糊。 */
+.annual em { font-style: normal; font-size: 12px; color: var(--faint); margin-left: 1px; }
+.annual[data-assumed="true"] {
+  color: var(--dim); border-bottom: 1px dashed var(--edge-strong);
+}
+/* 「没有这个数」的破折号。原来用的是 `--edge-strong`——**那是边框色，不是文字色**，
+   量出来对比度 1.75（WCAG AA 要 4.5），实测在 `--panel` 底上几乎看不见：
+   格子读起来像「空的」，而它要说的是「查过了，平台没给」。两件事不一样。
+   换成 `--faint`：仍然是这一行里最轻的字，但看得见。 */
+.skill-none { color: var(--faint); font-family: var(--mono); }
+
+/* 「这 9 个都是「值得投」· 都在上海 · 公司都没公开」——
+   把整份名单里从不变化的那几样从每一行里抽出来，在表头说一次。
+   它是**说明**不是标记，所以不给边框、不给强调色：一行轻字，扫过去就行。 */
+.sl-const {
+  margin: 0 0 8px; font-size: 12.5px; line-height: 1.6; color: var(--faint);
+}
+
+/* **中文小标签的字号下限是 12.5px**（与 `.kicker` 齐平）。
+   tokens.ts 顶上写着「低于 13 的中文在深底上读不清」，而这一族方章
+   （读过 JD / 材料就绪 / 已投 / 这家投过 / 推荐先投 / 另挂 N 处）
+   一直是 11px —— 自家定的下限自家没守。实测 2026-08-22：`--panel` 底上
+   11px 的「材料就绪」在 1.5 倍屏上笔画已经粘连。
+   拉丁与数字部分照旧靠 0.04em 拉开（`.kicker` 就是这个值，中文的上限）。 */
+/* 「你在定制简历里已经写过这一节了」——原文照抄。
+   `code` 用等宽是因为它要被原样复制走，等宽让人一眼看出边界在哪。 */
+.bresume-elsewhere { display: block; margin: 5px 0; }
+.bresume-elsewhere code {
+  display: block; margin-top: 3px; padding: 5px 8px;
+  background: var(--panel-raised); border-left: 2px solid var(--edge-strong);
+  font-family: var(--mono); font-size: 12px; line-height: 1.7; color: var(--lit);
+  white-space: pre-wrap; word-break: break-all;
+}
+/* 评估自己的结论（「建议」那一节）。**排在最前面**——它回答的是
+   「这个岗到底投不投」，比「问什么」「发什么」都更靠前。
+   说「不投」的那些描红：它和上面那枚判词可以合法地不一致，
+   而不一致的时候，用户要一眼看出该听哪一个。 */
+.job-advice {
+  margin: 0 0 12px; padding: 9px 12px; font-size: 13px; line-height: 1.75;
+  color: var(--lit);
+  border-left: 2px solid var(--faint);
+  background: color-mix(in srgb, var(--faint) 6%, transparent);
+}
+.job-advice.is-against {
+  border-left-color: var(--lock);
+  background: color-mix(in srgb, var(--lock) 8%, transparent);
+}
+.job-advice b { color: var(--faint); font-weight: 600; }
+
+/* 「投之前先问清这几条」。摆在开场白之前——它要回答的是「该不该发」，
+   而开场白回答的是「发什么」，顺序不能反。 */
+.ask-before {
+  margin: 0 0 12px; padding: 9px 12px;
+  border-left: 2px solid var(--caution);
+  background: color-mix(in srgb, var(--caution) 7%, transparent);
+}
+.ask-before ul { margin: 5px 0 0; padding-left: 1.15em; }
+.ask-before li { font-size: 13px; line-height: 1.75; color: var(--lit); }
+.ask-before p { margin: 6px 0 0; font-size: 12.5px; line-height: 1.7; color: var(--faint); }
+/* 开场白发之前要删掉的几处。挨着那段话本身放——它说的是「这段话里的哪几个字」，
+   隔一段就对不上号了。--caution：不是错，是发之前顺手删掉。 */
+.greet-warn {
+  margin: 6px 0 0; padding: 7px 10px;
+  border-left: 2px solid var(--caution);
+  background: color-mix(in srgb, var(--caution) 8%, transparent);
+  font-size: 12.5px; line-height: 1.7; color: var(--lit);
+}
+/* 「在跟谁说话」那条与上面那条同款，只把左边那道竖线换个色：
+   上面那条是「这段字里有该删的东西」，这条是「你可能对错了人」——
+   两件事，挨着放但要看得出不是一回事。 */
+.addressee-warn { border-left-color: var(--caution); }
+
+.greet-warn i { display: block; margin-top: 3px; font-style: normal; color: var(--faint); }
+/* 「话术备好 · 先问清」——「可以考虑」那一档的材料章。与「材料就绪」同形制，
+   但用 --caution：它不是「可以发了」，是「还差一步」。 */
+.ask-chip {
+  display: inline-block; margin-top: 4px; font-size: 12.5px; letter-spacing: 0.04em;
+  color: var(--caution);
+  border: 1px solid color-mix(in srgb, var(--caution) 45%, transparent);
+  padding: 1px 6px; white-space: nowrap;
+}
+/* 「N 天没刷新」——招聘方两周没动过这个岗。与「没读 JD」同族：都是提醒不是错误，
+   都用 --caution。区别在于那个说的是**我们**没读全，这个说的是**对方**没在跟。 */
+.stale-chip {
+  display: inline-block; margin-top: 4px; font-size: 12.5px; letter-spacing: 0.04em;
+  color: var(--caution);
+  border: 1px solid color-mix(in srgb, var(--caution) 45%, transparent);
+  padding: 1px 6px; white-space: nowrap;
+}
+/* 「排了 N 天没发」——你压着它多久。与 `.stale-chip` 同族（都是提醒不是
+   判决），但**换一个色**：那个说的是招聘方没动，这个说的是你没动，
+   混成一个颜色就读成同一件事了。中文不加字距（AGENTS.md 末尾）。 */
+.queued-chip { font-size: 12px; color: var(--caution);
+  border: 1px solid var(--edge-strong); border-radius: 3px;
+  padding: 0 4px; margin-left: 6px; white-space: nowrap; }
+/* 「没读 JD」——**这一族里唯一的提醒**。它标的是「这个岗的分只按列表卡片评的」，
+   而那正是要人自己去看一眼原文的那一行。用 --caution：不是错误，是「留个神」。 */
+.raw-chip {
+  display: inline-block; margin-top: 4px; font-size: 12.5px; letter-spacing: 0.04em;
+  color: var(--caution);
+  border: 1px solid color-mix(in srgb, var(--caution) 45%, transparent);
+  padding: 1px 6px; white-space: nowrap;
+}
+
+/* 「没查公司」——同一族里**更轻的那一档**。它和上面那枚的区别是真的：
+   上面那枚说「这个分只按卡片评的，你得自己去看原文」，是要人动手的提醒；
+   这一枚说「JD 读了、硬门核了，只差公司调研」，那件事出材料时会自己补上，
+   不需要用户做什么。所以降到 --faint：留个记号，不占注意力。
+   实测 2026-08-26：会挂这一族章的 1416 个岗里 940 个属于这一档，
+   全用琥珀色等于把「不用你管」的事印成了 940 条提醒。 */
+.raw-chip-soft {
+  color: var(--faint);
+  border-color: color-mix(in srgb, var(--faint) 40%, transparent);
+}
+
+.score-src {
+  display: block; font-style: normal; font-size: 12.5px;
+  color: var(--faint); margin-top: 5px; letter-spacing: 0.02em;
+}
+.mat-chip {
+  display: inline-block; margin-top: 4px; font-size: 12.5px; letter-spacing: 0.04em;
+  color: var(--dim); border: 1px solid var(--edge-strong); padding: 1px 6px;
+  white-space: nowrap;
+}
+/* 已投：与「材料就绪」同形制，但用中性色——它是事实不是建议 */
+.sent-chip {
+  display: inline-block; margin-top: 4px; font-size: 12.5px; letter-spacing: 0.04em;
+  color: var(--dim); border: 1px solid var(--edge-strong); padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.rec-chip {
+  display: inline-block; margin-top: 5px; font-size: 12.5px; letter-spacing: 0.04em;
+  color: var(--data); border: 1px solid var(--data-deep); padding: 1px 6px;
+  white-space: nowrap;
+}
+
+/* ---------- 短名单表格（antd Table 的定点覆盖） ---------- */
+.shortlist .ant-table { background: transparent; }
+/* 表头是中文，字距只收 0.06em；0.17em 那套是拉丁排版，会把「硬性条件」拉散。 */
+.shortlist .ant-table-thead > tr > th {
+  /* 表头底色比表体亮，`--faint` 在它上面只有 3.93（AA 要 4.5）。
+     表头是「分 / 技能 / 年包」这几个可排序的列名，读不清等于不知道能按什么排。 */
+  font-size: 12px; letter-spacing: 0.06em; font-weight: 400; color: var(--dim);
+}
+/* antd 默认给表头单元格之间加竖分隔条，这里靠留白分栏，去掉它 */
+.shortlist .ant-table-thead > tr > th::before { display: none !important; }
+.shortlist .ant-table-tbody > tr > td { border-bottom: 1px solid var(--edge); }
+.shortlist .ant-table-tbody > tr { cursor: pointer; }
+/* 选中行用左侧色条标记，而不是整行染色——染色会压掉分数的语义色 */
+.shortlist .ant-table-tbody > tr[data-selected="true"] > td:first-child {
+  box-shadow: inset 3px 0 0 var(--data);
+}
+.score { text-align: center; }
+.score b { display: block; font-family: var(--mono); font-size: 26px; font-weight: 700; line-height: 1; }
+.score i { white-space: nowrap; }   /* 判词不折行——折了每行就多占一行高 */
+.score i {
+  display: block; font-family: var(--serif); font-style: normal;
+  /* 判词是纯中文（强匹配/值得投），字距压到中文上限 0.04em */
+  font-size: 12px; letter-spacing: 0.04em; margin-top: 3px;
+}
+.job-title { font-size: 15.5px; font-weight: 600; line-height: 1.4; }
+.job-meta { font-size: 13px; color: var(--dim); margin-top: 2px; }
+/* 标记横着排在公司/地点后面。原来它们竖着堆在 88px 的分数格里，一行堆四层，
+   把行高撑到 130px；这一列在 1440px 下本来就空着五百多像素。 */
+.job-chips {
+  display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin-left: 10px; vertical-align: middle;
+}
+/* 竖排时那点上边距在横排里就是错位 */
+.job-chips > * { margin-top: 0; }
+.job-meta b { color: var(--lit); font-weight: 600; }
+.job-meta .warn { color: var(--caution); }
+
+/* ---------- 行内展开：详情长在它自己那一行下面 ----------
+   关键是让展开区**看起来属于上面那一行**：选中行与展开行共用一条左侧强调边，
+   中间没有缝，背景比普通行深一档。否则它只是"恰好排在下面的一块内容"。 */
+.shortlist .ant-table-expanded-row > td {
+  background: var(--bay) !important;
+  border-left: 3px solid var(--data);
+  padding: 0 !important;
+}
+.shortlist .ant-table-expanded-row .readout-body {
+  padding: 16px 20px 20px;
+}
+/* 选中行去掉底边，与下面的展开区连成一体 */
+.shortlist tbody tr[data-selected="true"] > td { border-bottom-color: transparent; }
+
+/* 展开状态不另立元素：职位名变强调色，左侧强调条已经在 tr[data-selected] 上。 */
+.job-title[data-open="true"] { color: var(--data); }
+/* 整行是可点的控件，给出该有的反馈 */
+.shortlist tbody tr[data-row-key] { cursor: pointer; }
+.shortlist tbody tr[data-row-key]:focus-visible {
+  outline: 2px solid var(--data); outline-offset: -2px;
+}
+
+.no-detail {
+  margin: 0; padding: 12px 15px; font-size: 13.5px; line-height: 1.75;
+  color: var(--dim); background: var(--panel);
+  border: 1px dashed var(--edge-strong);
+}
+.no-detail b { color: var(--caution); font-weight: 600; }
+.no-detail code {
+  font-family: var(--mono); font-size: 12.5px; color: var(--data);
+  background: var(--bay); padding: 1px 6px; border: 1px solid var(--edge);
+}
+
+/* ---------- 读数详情 ---------- */
+.readout { border: 1px solid var(--edge-strong); background: var(--panel); }
+.readout-head {
+  display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap;
+  padding: 17px 18px 15px; border-bottom: 1px solid var(--edge);
+}
+.readout-title { font-size: 20px; font-weight: 700; line-height: 1.3; margin: 0; }
+.readout-meta { font-size: 13.5px; color: var(--dim); margin: 4px 0 0; }
+.readout-meta b { color: var(--lit); font-weight: 600; }
+.readout-meta code { font-family: var(--mono); font-size: 12.5px; color: var(--data); }
+.readout-score { margin-left: auto; text-align: right; }
+.readout-score b { font-family: var(--mono); font-size: 46px; font-weight: 700; line-height: .9; }
+.readout-score i {
+  display: block; font-family: var(--serif); font-style: normal;
+  font-size: 14px; letter-spacing: 0.16em; margin-top: 6px;
+}
+.readout-facts { font-size: 13.5px; color: var(--dim); margin: 5px 0 0; }
+.readout-facts .warn { color: var(--caution); }
+.readout-body { padding: 17px 18px 19px; }
+
+/* ---------- 行动区：链接 / 话术 / 命令 ----------
+   这块永远排在详情区最前——整页的目的就是让人把这个岗投出去。 */
+.act {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 14px 16px; margin-bottom: 18px;
+  background: var(--panel-raised); border: 1px solid var(--edge-strong);
+}
+.act-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.act-label { font-size: 12.5px; color: var(--faint); }
+/* 开场白那一行：按钮在前、说明在后。整页最常按的一下不该排在一句说明的末尾。 */
+.greet-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* 带字的复制按钮。方形语言，与页面上别的按钮同形制，只是更亮一档——
+   它是这一块里唯一要人动手的东西。 */
+.copy-btn.ant-typography {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 11px; font-size: 13px; font-weight: 600;
+  color: var(--data); border: 1px solid var(--data-deep);
+  background: color-mix(in srgb, var(--data) 10%, transparent);
+  cursor: pointer;
+  /* 给下面那块拉伸命中区当定位参照 */
+  position: relative;
+}
+.copy-btn.ant-typography:hover { border-color: var(--data); }
+/* antd 把复制图标渲染成一个 <button>，默认带自己的行高与外边距 */
+.copy-btn.ant-typography .ant-typography-copy { margin: 0; color: inherit; }
+
+/* ── 整个按钮都要能点 ──
+   `copyable` 只把**图标**渲染成 `<button>`，「复制开场白」那几个字是同级的
+   纯文本。而 `.copy-btn` 给整块画了边框、底色和 `cursor: pointer` ——
+   它看上去是一个按钮，实际可点的只有末尾那 27×29。用户点在字上没反应，
+   而这是整页最常按的一下（`Cmd.tsx` 的注释原话：「去投的第一个动作」）。
+
+   **看起来能点的地方就必须能点**，光标已经在那儿承诺过了。
+
+   做法是把那个 `<button>` 的命中区用伪元素铺满整块（拉伸命中区，
+   `position: relative` 在上面）：点击、键盘、焦点环、`aria-label`、
+   「已复制」反馈全部仍归 antd 那个真按钮，这里一行 JS 都不加。
+   伪元素不占布局，版面一个像素不动。
+
+   只给 `.copy-btn` 用，不给 `.cmd` / `CopyIcon`：那些是行内的小图标，
+   没有自己的盒子，铺满会把整行文字都变成复制按钮。 */
+.copy-btn.ant-typography .ant-typography-copy::before {
+  content: ""; position: absolute; inset: 0;
+}
+
+/* ── 复制图标的点击区 ──
+   实测（2026-08-18，Playwright 逐分辨率扫触摸目标）：antd 的复制图标渲染出来
+   只有 **13×15px**，全页 7 处，在 320px 到 3840px 每一档都一样小。
+   手指按不准，鼠标也要瞄——而它挂在命令行（`/job-apply <职位链接>`）和开场白上，
+   正是这一页最该一点就走的两件事。
+   用内边距把可点区撑到 27×29，再用等量负外边距抵掉，**版面一个像素不动**
+   （放大盒子会把命令行的行高顶开，实测多出 6px）。 */
+.cockpit .ant-typography-copy {
+  /* 挂在 `.cockpit` 上而不是 `.cmd` / `.copy-btn`：实测这 7 个图标的祖先链是
+     `button.ant-typography-copy < span.ant-typography-actions < code < span.ant-typography`
+     ——命令那几个长在 `<code>` 里，压根没有 `.cmd` 这一层，按它选一个都选不中。
+     `.cockpit` 是整页的根，(0,2,0) 也压得过 antd 自己那条 `.ant-typography-copy`。 */
+  padding: 7px;
+  /* antd 给的是 `margin-inline-start: 4px`，保留它，其余三边用负值抵掉内边距 */
+  margin: -7px -7px -7px -3px;
+}
+.act-note { font-size: 12.5px; color: var(--dim); }
+/* 状态按钮长在「下一步」那条里（见 JobReadout 的注释：动作要挨着解释它的那句话）。
+   `.jobstep` 是 baseline 对齐的——一行文字加按钮，baseline 会把按钮吊起来，
+   所以这里按钮单独回到居中。 */
+.jobstep .ant-btn, .jobstep .status-done, .jobstep .status-err {
+  align-self: center;
+}
+.status-done {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--dim);
+}
+/* 撤销是**次要动作**，不给它按钮的分量——但要有下划线，让人看得出能点。
+   颜色用 dim 不用 data：主色在这一页是「数据/通过」的意思，
+   给一个撤销动作上主色，等于说「撤销是好事」。 */
+.status-undo {
+  background: none; border: 0; padding: 0;
+  font: inherit; color: var(--dim);
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+}
+.status-undo:hover:not(:disabled) { color: var(--lit); }
+.status-undo:disabled { cursor: default; opacity: 0.5; }
+.status-err { font-size: 12.5px; color: var(--lock); }
+/* 邮件与网申自评：默认收起的那一小块。摘要行做成一句问句，不做成按钮——
+   它不是一个动作，是「你需要的话在这儿」。 */
+.chan { margin-top: 10px; }
+.chan > summary {
+  cursor: pointer; list-style: none;
+  font-size: 12.5px; color: var(--faint); padding: 3px 0;
+}
+.chan > summary::-webkit-details-marker { display: none; }
+.chan > summary::before { content: "▸ "; }
+.chan[open] > summary::before { content: "▾ "; }
+.chan > summary:hover { color: var(--dim); }
+.chan > summary:focus-visible { outline: 2px solid var(--data); outline-offset: 2px; }
+.chan-one { margin: 8px 0 14px; }
+.chan-subj { margin: 6px 0; font-size: 13px; color: var(--dim); }
+/* 「用邮箱打开」是次要出口——主路径是上面那个复制按钮（没装邮件客户端时
+   这个链接点了没反应）。所以它不做成按钮，只做一条链接。 */
+.chan-mail { font-size: 12.5px; margin-left: auto; }
+
+.greeting {
+  margin: 7px 0 0; padding: 11px 13px;
+  background: var(--bay); border: 1px solid var(--edge);
+  font-size: 13.5px; line-height: 1.8; color: var(--dim); white-space: pre-wrap;
+}
+
+/* ---------- 为什么是这个结论：人话两列，不上百分比 ---------- */
+.reasons { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
+.reason-col { border: 1px solid var(--edge); background: var(--panel); padding: 13px 15px; }
+.reason-col h4 { margin: 0 0 10px; font-size: 13.5px; font-weight: 600; color: var(--lit); }
+.reason-col ul {
+  margin: 0; padding: 0; list-style: none; display: grid; gap: 8px;
+  font-size: 13.5px; color: var(--dim);
+}
+.reason-col li { padding-left: 16px; position: relative; line-height: 1.65; }
+.reason-col li::before { position: absolute; left: 0; font-weight: 700; }
+.reason-plus li::before { content: "+"; color: var(--data); }
+.reason-minus li::before { content: "−"; color: var(--caution); }
+.reason-col li b { color: var(--lit); font-weight: 600; }
+.reason-empty { margin: 0; font-size: 13px; color: var(--faint); }
+
+/* ---------- 两栏：缺口 / 信息质量 ---------- */
+.two-col { display: grid; grid-template-columns: 1.1fr 1fr; gap: 14px; margin-top: 22px; }
+/* 只剩一格时占满整行——1.1fr 的那一列独自留在左边，右边空着半张桌子，
+   看起来像另一格没加载出来。 */
+.two-col[data-single="true"] { grid-template-columns: 1fr; }
+.slab { border: 1px solid var(--edge); background: var(--panel-raised); padding: 15px 17px; }
+.slab-head { display: flex; align-items: center; gap: 10px; margin-bottom: 13px; }
+.slab-head h3 { font-size: 14.5px; font-weight: 600; margin: 0; }
+.gap-item { display: grid; grid-template-columns: auto 1fr; gap: 11px; font-size: 13.5px; color: var(--dim); }
+.gap-item + .gap-item { margin-top: 13px; }
+/* 只是分类标签，中性色。红色在本页专门留给「不能写成…」的越界表述。
+   同样不用 mono——「核心职责」是中文。 */
+.gap-kind {
+  font-size: 11.5px; color: var(--dim); background: var(--bay);
+  border: 1px solid var(--edge-strong); padding: 2px 6px;
+  height: fit-content; white-space: nowrap; letter-spacing: 0.02em;
+}
+.gap-item strong { color: var(--lit); font-weight: 600; }
+/* 越界表述划红——这是「诚实底线」在视觉上的落点 */
+.gap-item s { color: var(--faint); text-decoration-color: var(--lock); text-decoration-thickness: 1.5px; }
+
+.quality-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; font-size: 13.5px; color: var(--dim); }
+.quality-list li { padding-left: 15px; position: relative; }
+.quality-list li::before {
+  content: ""; position: absolute; left: 0; top: 0.68em; width: 6px; height: 6px;
+  border: 1.5px solid var(--caution); transform: rotate(45deg);
+}
+.quality-list strong { color: var(--lit); font-weight: 600; }
+.quality-foot { margin: 13px 0 0; font-size: 12.5px; color: var(--faint); }
+
+/* ---------- 环境 / 搁置（antd Collapse 覆盖） ---------- */
+/* 折叠块之间、以及它和下一段之间的间距**在这里给，不要写内联 style**。
+   原来三处 `style={{ marginTop: 26 }}` 各给各的，而 margin 只推上不推下——
+   于是命令表和紧跟它的「可以投的岗位」段头**间距为 0**，两个不同层级的东西
+   贴在一起（实测：其它相邻块都是 26px，只有这一处 0）。
+   用 margin-block 一次给上下两侧，相邻折叠块之间会自然折叠成 26px 而非 52px。 */
+.panel-collapse.ant-collapse {
+  border: 1px solid var(--edge); border-radius: 0;
+  margin-block: 26px;
+}
+.panel-collapse .ant-collapse-item { border-bottom: 0; }
+.panel-collapse .ant-collapse-header { align-items: center !important; }
+.panel-collapse .ant-collapse-content { border-top: 1px solid var(--edge); }
+/* 正文要和标题对齐。tokens.ts 把 Collapse 的 contentPadding 压成了 0，而标题
+   自己有 16px 内缩（headerPadding）——于是展开后正文**顶着那条 1px 边框**，
+   还比标题左出去 16px。实测六块折叠面板全是这样（正文 left 157 / 标题 173）。
+   内缩给在这里、不给在各块自己身上：六个正文各写一遍，迟早有人漏。
+
+   **选择器要写满五层。** antd 自己那条是
+   `.ant-collapse .ant-collapse-panel > .ant-collapse-body`（0,3,0），
+   borderless 那条还是 0,4,0；而它的样式是**运行时注入到 head 的 `<style>`**，
+   排在我们这份 `<link>` 后面——同分它赢。实测 `.panel-collapse .ant-collapse-body`
+   （0,2,0）写了等于没写，页面上一点变化都没有。 */
+.panel-collapse.ant-collapse > .ant-collapse-item > .ant-collapse-panel > .ant-collapse-body {
+  padding: 14px 16px 16px;
+}
+/* 例外：整块就是一张表或一列整行卡片（可以投的岗位 / 不投的岗位），它们自己
+   撑满，两侧再加内缩反而和上面那张主表对不齐。同分，靠排在后面赢。 */
+.panel-flush.ant-collapse > .ant-collapse-item > .ant-collapse-panel > .ant-collapse-body {
+  padding: 0;
+}
+/* 会静默失败的依赖：单独一条，不混进下面的格子里。用 caution 不用 lock——
+   它不是「坏了」，是「会悄悄坏」，而红色在这一页表示不合格。 */
+.env-silent {
+  margin: 0 0 12px; padding: 9px 12px; font-size: 13px; line-height: 1.6;
+  color: var(--lit);
+  border-left: 3px solid var(--caution);
+  background: color-mix(in srgb, var(--caution) 9%, transparent);
+}
+.env-fix { display: block; margin-top: 3px; font-size: 12.5px; color: var(--dim); }
+/* 格子里的装法：比 unlocks 再弱一档，它是「怎么办」不是「有什么用」。 */
+.env-item .env-fix { margin-top: 5px; font-size: 12px; color: var(--faint); }
+.env-cli { display: flex; align-items: center; gap: 8px;
+  margin: 12px 0 0; font-size: 12.5px; color: var(--faint); }
+
+.env-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(216px, 1fr));
+  gap: 1px; background: var(--edge);
+}
+.env-item { background: var(--panel); padding: 11px 15px; display: flex; gap: 10px; align-items: flex-start; }
+.env-led { width: 8px; height: 8px; margin-top: 6px; flex-shrink: 0; }
+.env-item[data-ok="true"] .env-led { background: var(--data); }
+.env-item[data-ok="false"] .env-led { box-shadow: inset 0 0 0 1.5px var(--faint); }
+/* 不作判定的项：虚线圈，既不是绿灯也不是缺失 */
+.env-item[data-ok="na"] .env-led { border: 1px dashed var(--edge-strong); }
+.env-name { font-size: 13.5px; font-weight: 600; }
+.env-detail {
+  font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums;
+}
+.env-unlock { font-size: 12.5px; color: var(--dim); }
+
+.shelf-row {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 13px; align-items: center;
+  border: 1px solid var(--edge); padding: 10px 14px; font-size: 13.5px;
+}
+.shelf-row + .shelf-row { margin-top: 7px; }
+/* 你自己排除的：左边一道实线，与「被条件挡下的」区分开 */
+.shelf-row[data-mine="true"] { border-left: 2px solid var(--edge-strong); }
+.shelf-restore {
+  background: none; border: 1px solid var(--edge-strong); color: var(--dim);
+  font: inherit; font-size: 12px; padding: 2px 10px; cursor: pointer;
+  white-space: nowrap;
+}
+.shelf-restore:hover { border-color: var(--data); color: var(--data); }
+.shelf-restore:focus-visible { outline: 2px solid var(--data); outline-offset: 1px; }
+
+/* 「不投这个岗」：破坏性动作，但不该抢戏 —— 推到行尾，用中性描边 */
+/* ── 「这个岗」那一行的两组动作 ──
+   ① .act-advance 推进投递进度（我投了 / 约面了 / 拿到 offer…）
+   ② .act-remove  把这一行从名单里拿掉（不投 / 已下线）
+   原来两类同字重、同一行、中间还隔着一整句长说明，用户原话「有点混在一起」。
+   现在②整组靠右、前面一条竖线、字重更轻——一眼能看出它们不是同一类动作。 */
+.act-group { display: inline-flex; align-items: center; gap: 8px; }
+.act-remove { margin-left: auto; gap: 6px; }
+/* ①b .act-viewed 投出去之后那一条**观察**：对方点开简历了吗。
+   跟①同一类（都关于这次投递），所以不靠右、不加竖线；但它是一个**问题**
+   而不是一个动作，所以前面带一句提问，字号更小。
+   为什么值得占这一行：国内平台在「投递记录」里逐条标着已查看 / 未查看，
+   而那一个字决定「投了没回音」该怪谁 —— 已查看还是没回才轮到审简历，
+   大多未查看时改简历没用。判据见 `job-outcome.md` Step 2b。 */
+.act-viewed { gap: 6px; margin-left: 4px; }
+.act-viewed-q { font-size: 12px; color: var(--faint); }
+.act-sep {
+  width: 1px; height: 16px; background: var(--edge-strong);
+  margin-right: 2px; flex-shrink: 0;
+}
+/* 移出类按钮：默认更淡，悬停才亮出各自的语义色。
+   不做成常亮的红/黄——它们是次要动作，常亮会跟主动作抢注意力。 */
+.act-remove .ant-btn {
+  color: var(--faint) !important;
+  border-color: var(--edge-strong) !important;
+  background: transparent !important;
+}
+.act-drop:hover { border-color: var(--lock) !important; color: var(--lock) !important; }
+/* 已下线是「事实」不是「否决」，用琥珀（待留意）而不是红色（不合格） */
+.act-expire:hover { border-color: var(--caution) !important; color: var(--caution) !important; }
+/* 搁置区里已下线的行：整行压暗一档——它不是「待你决定」，是已经没了 */
+.shelf-row[data-gone="true"] { opacity: 0.72; }
+.shelf-row[data-gone="true"] .shelf-why { color: var(--caution); }
+.shelf-why { font-size: 12.5px; color: var(--faint); }
+/* 没列出来的那一大批交代一句。它不是提示也不是警告，只是这份名单的结尾。 */
+.shelf-more {
+  margin: 12px 0 0; padding: 10px 13px; font-size: 12.5px; line-height: 1.75;
+  color: var(--faint); border-top: 1px solid var(--edge);
+}
+.shelf-more b { color: var(--dim); font-weight: 600; }
+
+/* 待写回的排除：贴在名单下方，数量一多就该显眼 —— 但它是提示不是警报，
+   所以只用琥珀描边，不铺满色块。 */
+.pending-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 22px; padding: 12px 16px;
+  background: var(--panel); border: 1px dashed var(--caution);
+}
+.pending-n {
+  font-family: var(--mono); font-size: 22px; font-weight: 700;
+  color: var(--caution); font-variant-numeric: tabular-nums;
+}
+.pending-text { font-size: 13.5px; color: var(--dim); flex: 1; min-width: 260px; }
+.pending-text b { color: var(--lit); font-weight: 600; }
+/* 写失败：同一个条，换成实线告警边——虚线在这里读作「待办」，
+   而这条不是待办，是**刚才那个动作没成功**。 */
+.pending-bar[data-tone="error"] {
+  border-style: solid; border-color: var(--lock);
+}
+
+/* ---- 市场怎么读你的简历 ---------------------------------------------- */
+.rread { display: grid; gap: 22px; }
+.rread-sec { display: grid; gap: 9px; }
+.rread-lead { margin: 0; font-size: 13.5px; line-height: 1.75; color: var(--dim); }
+.rread-lead b { color: var(--lit); font-weight: 600; }
+.rread-note { margin: 0; font-size: 12.5px; line-height: 1.7; color: var(--faint); }
+.rread-note b { color: var(--dim); font-weight: 600; }
+
+/* 「还能投的 N 个」——库存那一行。比上面的中位数那句重一档（它带一条要执行的
+   命令），但还没重到抢走段头。`data-thin` 在库存掉到一半以下时才点亮左边那道杠。 */
+.rread-open {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--dim);
+  padding-left: 9px;
+  border-left: 2px solid var(--edge);
+}
+.rread-open[data-thin] { border-left-color: var(--caution); }
+.rread-open b { color: var(--lit); font-weight: 620; }
+/* 中文里 <code> 不套等宽字距（会被拉成散字）。这里是纯拉丁命令，安全。 */
+.rread-open code {
+  margin-left: 4px;
+  font-family: var(--mono);
+  font-size: 0.92em;
+  color: var(--data);
+  background: color-mix(in srgb, var(--data) 10%, transparent);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.rread-q {
+  margin-left: 8px; font-size: 12.5px; letter-spacing: 0; color: var(--faint);
+  border-bottom: 1px dotted var(--edge-strong); cursor: help;
+}
+/* 行业分布：数字用等宽（纯数字才配等宽——中文加字距会被拉成散字） */
+.rread-inds { display: flex; flex-wrap: wrap; gap: 8px; }
+.rread-ind {
+  padding: 3px 9px; font-size: 12.5px; color: var(--dim);
+  background: var(--panel-raised); border: 1px solid var(--edge);
+}
+.rread-ind em {
+  margin-left: 6px; font-style: normal; font-family: var(--mono);
+  font-size: 11px; color: var(--data); font-variant-numeric: tabular-nums;
+}
+/* 三样阻碍：靠色相区分「改不了 / 问一句 / 靠选择绕开」，不靠图标 */
+.rread-block {
+  display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap;
+  padding: 9px 12px; background: var(--panel-raised);
+  border-left: 2px solid var(--edge-strong);
+}
+.rread-block[data-tone="fixed"]  { border-left-color: var(--lock); }
+.rread-block[data-tone="ask"]    { border-left-color: var(--caution); }
+.rread-block[data-tone="choose"] { border-left-color: var(--data); }
+.rread-bn { flex-shrink: 0; font-size: 13px; color: var(--lit); font-weight: 600; }
+.rread-bn em {
+  margin-left: 6px; font-style: normal; font-family: var(--mono);
+  font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums;
+}
+.rread-bnote { font-size: 12.5px; line-height: 1.7; color: var(--dim); flex: 1; min-width: 240px; }
+.rread-bnote b { color: var(--lit); font-weight: 600; }
+/* 简历待补：用 caution 而不是 lock——这是「你会但没写」，不是「你不会」 */
+.rread-gaps { display: flex; flex-wrap: wrap; gap: 8px; }
+.rread-gap {
+  padding: 4px 10px; font-size: 12.5px; color: var(--lit);
+  background: var(--panel-raised); border: 1px dashed var(--caution);
+}
+.rread-gap em {
+  margin-left: 7px; font-style: normal; font-size: 12.5px; color: var(--faint);
+}
+
+/* 同岗多投放标记：信息不是警告，用数据色的弱化边框 */
+/* 同一个岗挂在多处 —— 这是**中性脚注**，不是强调。
+   原来用 `--data` + 描边：那是全页的主强调色（漏斗数字、下一步、段计数都在用它），
+   花在一条脚注上，结果是它比自己注解的那个公司名还宽 2.3 倍（90px vs 39px），
+   二级信息压过主体。改成无边框的次级文字，长度也一并收短，完整说明留在 tooltip。 */
+.dup-chip {
+  display: inline-block; margin-left: 6px;
+  font-size: 12.5px; line-height: 16px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.dup-chip::before { content: "·"; margin-right: 6px; color: var(--edge-strong); }
+.pending-bar[data-tone="error"] .pending-text { color: var(--lit); }
+
+.cockpit-foot {
+  margin-top: 26px; font-size: 12px;
+  /* 中文不加大字距（AGENTS.md 排版规则）——0.1em 会把整句页脚拉成散字；
+     自家中文上限是 .kicker 的 0.04em */
+  letter-spacing: 0.02em; color: var(--faint);
+}
+
+/* ---------- 响应式 ---------- */
+/* 断点留在 900。**曾经提到 1100，又退回来了**：五列在 1045px 上装不下
+   `/job-apply <职位链接>`，命令折了行。当时的处置是提前收成两列，
+   实测下来那是笔坏买卖 —— 两列横排在 1045px 上一格宽 490px、右边一半是空的，
+   整条流水线从 222px 拉到 326px，而折行本身是**命令太长**造成的。
+   治因不治果：流水线上的命令改成不带参数的形式（`/job-apply`，
+   见 `export_web_data.py` 里那段说明），到 900px 都放得下，这里就不必提前折。 */
+@media (max-width: 900px) {
+  .two-col { grid-template-columns: 1fr; }
+  .rail { grid-template-columns: repeat(2, 1fr); }
+  /* **格子从这里就开始横过来。** 断点原来只写在 620px，而 768px 上两列 × 三行
+     仍然要 574px 高 —— 平板竖屏上「下一步」照样被推到折线以下。
+     两列时每格约 370px，左边 84px 给数字、右边 270px 给说明和命令，放得开。
+     具体规则写在 620px 那一节（同一套，不重复），这里只把它的起点提上来。 */
+  .rail-cell {
+    display: grid;
+    /* **数字那栏按内容量，不给固定宽。** 写死 84px 时，360px 和 640px 上
+       右边只剩 154px / 175px，而 `/job-apply <职位链接>` 加复制图标要 ~160px
+       —— 命令又折行了（这一条本来就是为了不折行才改的）。
+       `auto` 让它收到数字自己的宽（四位数约 65px），省下的全给右边那栏。
+       `min-width: 0` 是必需的：grid 子项默认 `min-width: auto`，
+       右栏会被内容撑开而不是收缩，等于没限制。 */
+    grid-template-columns: auto 1fr;
+    align-items: start;
+    gap: 2px 14px;
+  }
+  .rail-hit { min-width: 0; }
+  .rail-hit { grid-column: 1; }
+  .rail-filtered { grid-column: 1 / -1; }
+  /* **这两条要多挂一层 `.cockpit`。** 它们要盖的基础规则
+     （`.rail-guide { margin-top; border-top }`、`.rail-guide > .ant-typography
+     { margin-top: auto }`）在本文件下方约 200 行处，而**媒体查询不提升特异性**
+     ——同形选择器后写的赢。不加这一层，横过来之后那条上边框仍在，
+     变成左右两栏之间一条位置不对的横线。
+     这个陷阱本文件里已经有三处前例，`test_media_queries_actually_win` 盯着。 */
+  .cockpit .rail-guide {
+    grid-column: 2; min-width: 0; margin-top: 0; padding: 2px 0 0 14px;
+    border-top: 0; border-left: 1px solid var(--edge);
+  }
+  .cockpit .rail-guide > .ant-typography { margin-top: 0; }
+  .rail-v { font-size: 28px; }
+  /* 流水线是**奇数格**（5 步），排成两列时最后一格必定落单，而 `.rail` 自己的
+     底色就是分隔线的颜色（`--edge` 打底 + 1px gap 描出格线）——于是右边空出来的
+     那半行会显示成一个**带边框的空卡片**，看着像坏掉了。实测 798px 窗口下就是
+     这样。让落单的那一格占满整行。 */
+  .rail-cell:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .reasons { grid-template-columns: 1fr; }
+}
+
+/* 命令表在更窄处才需要堆叠：命令列只占 12em，到 720px 时说明列还有 ~500px，
+   并排仍然好读。断点写在这里而不是散落在文件下方——两个断点分处两地，改的人
+   只会看到其中一个。 */
+@media (max-width: 720px) {
+  /* 招聘网站那一块塌成两列：名字 + 数字一行，其余各占一行。
+     硬压五列会把「最近 08-19 · 新增 150」挤成一字一行。
+     **不为它单开 700px**——与这一档只差 20px，多一个断点就多一处要同步的地方。 */
+  .cockpit .portal-row { grid-template-columns: 8.5em 1fr; }
+  .cockpit .portal-how, .cockpit .portal-warn, .cockpit .portal-jd,
+  .cockpit .portal-last, .cockpit .portal-refresh { grid-column: 1 / -1; }
+  /* **这三条都要多挂一层 `.cockpit`，否则一条都不生效。**
+     它们要盖的基础规则（`.cmdbook-row { grid-template-columns: 12em 1fr }`、
+     `.cmdbook-ex { grid-column: 2 }`、`.cmdbook-bare { grid-column: 2 }`）都在
+     文件下方约 1000 行处，而**媒体查询不提升特异性**——同形选择器后写的赢。
+     实测（2026-08-18）：390px 上量到 `grid-template-columns: 180px 100px`，
+     说明列只有 100px、每行四五个字；`.cmdbook-ex` 与 `.cmdbook-bare` 也照旧
+     停在第 2 列。这个断点写下来之后**一次都没工作过**，而它上面那行注释
+     （「命令表在更窄处才需要堆叠」）读起来像是已经在管事了。
+     同一个陷阱这份文件里现在有三处，判据统一成：**要盖本文件下方的规则，
+     就得比它多一层，不能只靠「我在媒体查询里」。** */
+  .cockpit .cmdbook-row { grid-template-columns: 1fr; }
+  /* 堆叠后只剩一列，`grid-column: 2` 指向不存在的列——浏览器会隐式再开一条，
+     举例和「不给参数时」整块被挤到屏幕外。跟着回到第 1 列。 */
+  .cockpit .cmdbook-ex,
+  .cockpit .cmdbook-bare { grid-column: 1; }
+  .cockpit .cmdbook-does { color: var(--faint); }
+  .cockpit .se-step { grid-template-columns: 1fr; }
+}
+
+/* 更窄处：浮层与段头。**断点集中在这一节**——散落两地时改的人只会看到一个
+   （`test_css_and_cjk_text.BreakpointsStayTogether` 盯着，我加「不想看什么」时
+   就在文件尾部另起了一套，当场被它抓住）。 */
+@media (max-width: 620px) {
+  /* ── 流水线到这里收成一列 ──
+     两列在 390px 上每格只有 ~160px，而每格底下挂着一条要复制走的命令：
+     `/job-apply <职位链接>` 放不下，chip 被折成**两个各自带边框的盒子**
+     （实测：第一行 `/job-apply <`，第二行 `职位链接> ⧉`，复制图标还落了单）。
+     命令是这一页唯一要原样带走的东西，断开就等于让人怀疑自己看漏了。
+     一列给到 358px，整条命令一行放得下；顺带 5 步的落单格问题也不存在了。 */
+  .rail { grid-template-columns: 1fr; }
+
+  /* ── 但一列不等于四层竖堆 ──
+     实测（2026-08-22，390px）：五格竖着堆是 **945px** 高，于是那句唯一的
+     「下一步」被推到 y=1209，职位表推到 y=2264 —— 手机上要滑过 1.4 屏才看到
+     该做什么，2.7 屏才看到能投什么。而屏幕上最贵的位置全给了 34px 的大数字，
+     它独占整行、右边七成是空的。
+
+     改成**左数右说**：数字和名字占左边一栏，「在做什么 + 该敲什么」占右边。
+     **命令一条不删**（面板每处引导都要写出命令），删掉的是排版上的浪费。 */
+  /* 「左数右说」那套在 900px 那一节里，这里只收紧一档 —— 手机上每一像素都算。 */
+  .rail-cell { padding: 11px 13px; }
+  .rail-v { font-size: 27px; }
+
+  /* ── 窄屏：撤掉三个数字列，表格不再需要横滚 ──
+     实测（2026-08-18，Playwright 逐分辨率跑）：390px 上分 72 + 技能 76 + 年包 108
+     吃掉 358px 可视宽的 59%，**职位名每行都被切在右边缘**。三列的值并进职位格
+     （见 Shortlist.tsx 的 useNarrow），560px 的下限跟着解除。
+
+     **选择器多挂一层 `.cockpit` 是必需的，不是习惯。** 解除下限的那条和文件下方
+     `.shortlist .ant-table-content > table { min-width: 560px }` 完全同形，
+     而媒体查询**不提升特异性**——同特异性下后写的赢，那条在第 1200 行开外，
+     写在这里就一行都不生效（实测表格照旧 576px）。加 `.cockpit` 变成 (0,3,1)
+     压过它，位置就不再重要，断点也不必为此搬出这一节。
+
+     **同一个陷阱这一轮踩了两次。** 下面放开命令换行那条也一样：`.cmdbook-row
+     .ant-typography code { white-space: nowrap }` 在文件第 1000 行左右，
+     写成 `.cockpit .ant-typography code` 是 (0,2,1)，和它**一模一样**，
+     后写的赢——实测命令块照旧顶到 468px。凡是要覆盖本文件下方已有规则的，
+     都得比它多一层，不能只靠「我在媒体查询里」。 */
+  .cockpit .shortlist .ant-table-content > table { min-width: 0; }
+  .job-nums {
+    display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px;
+    margin-bottom: 3px;
+  }
+  .job-nums b { font-size: 19px; font-weight: 700; line-height: 1; }
+  .job-nums i { font-size: 11.5px; font-style: normal; }
+  /* 标签跟着正文走，只有数值进等宽——等宽套在汉字上会被拉成散字。
+     等宽也不加字距：加了就成了「4 8 - 8 4」（两条都在 AGENTS.md 里）。 */
+  .job-nums .jn-k { font-size: 12px; color: var(--dim); }
+  .job-nums .jn-k b { font-family: var(--mono); font-weight: 400; margin: 0 2px 0 3px; }
+  /* 命令块的 `code` 定死了 nowrap，`/job-scrape --no-rank`（只抓不评）在 358px 里
+     断不开——实测整块顶到 468px。放开换行，用 `keep-all` 挡住汉字内部的断点：
+     只在命令和占位符之间那个空格处折，`<职位链接>` 保持完整。不加 keep-all 就是
+     `/job-apply <职位链` / `接>` 那种拦腰截断，读的人以为自己看漏了。 */
+  /* 「不给参数时」那一列里有长路径（`reports/application-dashboard.html`），整串
+     没有空格，`keep-all` 断不开它——实测还差 11px。路径是说明文字不是要整条复制
+     走的命令，从中间折可以接受；只放开这一列。 */
+  .cmdbook-bare { overflow-wrap: anywhere; }
+
+  /* 「不想看什么」浮层写死 420px，比小屏还宽——铺满可用宽度并右对齐 */
+  /* 「不想看什么」浮层：窄屏改成**钉在视口上**，不是相对按钮右对齐。
+     这条规则原来是死的（同形选择器在文件下方赢了），修活之后才暴露出它本身
+     就不对：`right: 0` 对齐的是 `.hide-wrap` 这个 83px 宽的按钮的右缘，
+     于是 358px 宽的浮层从按钮右缘往左铺——实测 390px 下它的左缘在 **x=−112**，
+     整块有 112px 在屏幕外面，左边那列复选框根本点不到。
+     **修活一条躺了很久的规则，等于把一段从没被检验过的代码放进运行路径**，
+     不能只确认「它现在生效了」就算完，得看一眼它生效成什么样。
+     `fixed` + 左右留白直接对着视口定位，与按钮在哪无关。 */
+  .cockpit .hide-body {
+    position: fixed; left: var(--gutter); right: var(--gutter);
+    /* `bottom` 要写实。只给 `top: auto` 的话，fixed 元素落在它的**静态位置**
+       ——实测视口坐标 y=1939，而 fixed 不随页面滚，于是它永远在屏幕外面。
+       贴着视口底部才是窄屏浮层该待的地方。 */
+    top: auto; bottom: var(--gutter); width: auto;
+    max-height: 70vh; overflow-y: auto;
+  }
+  .sec-head { flex-wrap: wrap; row-gap: 6px; }
+  .sec-head .sec-note { margin-left: 0; }
+}
+
+/* 减少动态效果：**不能用 `animation: none`** —— antd 把 `opacity: 0` 写在动画的
+   起始状态里，关掉动画元素就永远停在那一帧（实测 2026-08-24 弹窗根本不出现，
+   详见 `App.tsx` 里 `desk-modal` 那段注释）。 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition: none !important;
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* 那排按钮：窄屏一行一个，别挤成两列各半行字。
+   **选择器多挂一层 `.cockpit`**：断点集中放在这一段，而 `.deskbtn` 的基础规则
+   在文件更靠后的地方 —— 媒体查询不提升特异性，同形又写在后面的那条会赢，
+   这几行一行都不生效。判据见 `test_media_queries_actually_win`。 */
+@media (max-width: 560px) {
+  .cockpit .deskbtn { flex-basis: 100%; }
+}
+
+
+/* ── 逐岗的下一步：这个岗卡在哪（区别于顶部那条全局建议）── */
+.jobstep {
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 10px;
+  border-left: 2px solid var(--data);
+  background: color-mix(in srgb, var(--data) 6%, transparent);
+  /* 不加圆角：全局是方形语言（tokens.ts「核心动作是盖章/判定，方形是它的形制语言」）。
+     左边那道 2px 亮边才是这个块的标记物，右侧收方反而让它更像一枚盖下去的印。 */
+}
+.jobstep-tag {
+  flex-shrink: 0;
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  color: var(--data);
+}
+.jobstep-text { font-size: 13px; }
+
+/* ── 面试练习回看 ── */
+.ilog-collapse .ant-collapse-content-box { padding-block: 4px 10px; }
+.ilog-head { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
+.ilog-stage, .ilog-date, .ilog-n { font-size: 12.5px; color: var(--faint); }
+/* 等宽只给纯数字——中文套等宽会被拉成散字（AGENTS.md 排版规则） */
+.ilog-date, .ilog-n { font-variant-numeric: tabular-nums; }
+.ilog-scene { margin: 0 0 8px; font-size: 12.5px; color: var(--faint); }
+.ilog-qa { margin-bottom: 14px; }
+.ilog-q { margin: 0 0 5px; font-size: 13px; font-weight: 600; display: flex; gap: 7px; }
+.ilog-num {
+  flex-shrink: 0;
+  min-width: 17px;
+  font-variant-numeric: tabular-nums;
+  color: var(--data);
+}
+.ilog-a {
+  margin: 0 0 5px 24px;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+.ilog-empty { color: var(--faint); }
+.ilog-fb {
+  margin: 0 0 0 24px;
+  padding-left: 9px;
+  border-left: 2px solid color-mix(in srgb, var(--caution) 55%, transparent);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--faint);
+  /* 反馈是**多行正文**，和上面的答案、和 .greeting 归同一条规矩：
+     **来自文件的多行正文一律 pre-wrap，换行的语义由取数层负责。**
+
+     CSS 分不出「作者要断行」和「80 列排版折的行」——它看到的都只是 \n。所以
+     判断放在 build_dashboard.unwrap_soft_wraps：软折行在那里就接回去了，能走到
+     这里的 \n 都是作者真要的断行，pre-wrap 照单全收即可（顺带保住列表的缩进）。
+
+     曾经反过来修过一次：只在这里加 pre-line，让所有 \n 都成硬换行。结果 4 个
+     换行里 3 个是折行，句子被从中间劈开。见 unwrap_soft_wraps 的 docstring。 */
+  white-space: pre-wrap;
+}
+.ilog-foot { margin-top: 10px; font-size: 12px; color: var(--faint); }
+
+
+/* ── 流水线那几格现在是真筛选 ── */
+.rail-cell:has(.rail-hit:hover:not(:disabled)) {
+  background: color-mix(in srgb, var(--data) 7%, transparent);
+}
+.rail-cell[data-filter="on"] {
+  background: color-mix(in srgb, var(--data) 12%, transparent);
+  box-shadow: inset 0 -2px 0 var(--data);
+}
+
+/* ── 每格的「这一步在做什么 + 该敲什么」 ── */
+.rail-guide {
+  margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--edge);
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+  /* 撑满剩下的高度，好让下面那行命令片贴着格子底边 */
+  flex: 1;
+}
+/* 命令片沉到格底。五格的说明有一行的也有三行的（「给想投的岗出评估和打招呼话术」
+   一行，隔壁两行），命令片跟着说明走就会高低不齐——实测第 3 格比其余四格高 18px。
+   它们是同一排可点的东西，得排在同一条线上。 */
+.rail-guide > .ant-typography { margin-top: auto; }
+/* 中文正文不加大字距（AGENTS.md 排版规则） */
+
+/* 「下一步」点名的那一格。判据在 App.tsx：按命令的头一个词与 nextStep 对上号，
+   所以五格与那句唯一的下一步永远指向同一件事。 */
+.rail-cell[data-nudge="on"] {
+  background: color-mix(in srgb, var(--data) 9%, transparent);
+}
+.rail-cell[data-nudge="on"]::before {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 2px;
+  background: var(--data);
+}
+
+/* 正在筛选时的状态标——数字变小必须有解释，否则像数据丢了 */
+.funnel-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--data) 45%, transparent);
+  /* 不加圆角：同类的 .rec-chip / .deep-chip / .mat-chip / .co-chip / .sent-chip
+     全是方的（都没声明 border-radius）。这里原来是 11px 的药丸——正是 tokens.ts
+     顶上那句「antd 默认 6px 圆角会把方章变成药丸」点名要避的形状。 */
+  background: color-mix(in srgb, var(--data) 10%, transparent);
+  color: var(--data);
+  /* **这是个可点的控件，不是装饰。** 实测量到 22px 高、11.5px 中文：
+     - WCAG 2.2 SC 2.5.8（Target Size Minimum）要求 24×24 CSS px —— 22 不够；
+     - 中文小标签的下限是 12.5px（tokens.ts「低于 13 的中文在深底上读不清」）。
+     两条都是这个项目自己写下的标准，而这一处两条都没过。 */
+  min-height: 24px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.funnel-chip:hover { background: color-mix(in srgb, var(--data) 18%, transparent); }
+
+/* ── 头部材料备得太少：顶在「可以投的岗位」上方的那块 ──
+   用 --caution 而不是 --danger：这不是错误，是一条「现在还投不出去」的提醒。
+   不加圆角，与这一页别的方章一致（见上面 .funnel-chip 里那段）。 */
+.mat-gap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--caution) 45%, transparent);
+  border-left-width: 3px;
+  background: color-mix(in srgb, var(--caution) 8%, transparent);
+}
+.mat-gap > b { color: var(--caution); }
+.mat-gap > span { flex: 1 1 22em; color: var(--dim); font-size: 13px; }
+/* 「你手上已经有 N 个备好的」——和上面那条缺口是**反向**的消息，
+   所以不跟着用告警色，独占一整行（`flex-basis:100%`）不跟命令挤在一排。
+   这一条报的是存货不是缺口，颜色走中性正文色，只有那个数加重。 */
+.mat-gap > .mat-gap-have {
+  flex: 1 0 100%;
+  color: var(--lit);
+  border-top: 1px dashed color-mix(in srgb, var(--edge) 80%, transparent);
+  padding-top: 8px;
+  margin-top: 2px;
+}
+/* `--data` 是这一页的正向强调色（青）。**不要用 `--caution`** ——
+   同一个框里两种含义的黄，读起来两条都是警告，而这一条报的是好消息。 */
+.mat-gap-have b { color: var(--data); font-weight: 650; }
+
+/* 那个数是**入口**，不是装饰：点一下只看这批备好没发的。
+   做成按钮而不是链接 —— 它不导航，只改这一页的筛选。
+   按下时用实心底色，因为筛选是个**有状态**的东西，
+   而这一页别处（流水线格子）也是这么表示「正开着」的。 */
+.have-jump {
+  font: inherit;
+  font-weight: 650;
+  color: var(--data);
+  background: none;
+  border: 1px solid color-mix(in srgb, var(--data) 45%, transparent);
+  border-radius: 3px;
+  padding: 0 6px;
+  cursor: pointer;
+}
+.have-jump:hover { border-color: var(--data); }
+.have-jump[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--data) 18%, transparent);
+  border-color: var(--data);
+}
+
+/* 中文里 <code> 不能套等宽加字距——会被拉成散字（AGENTS.md 的排版那条）。
+   这里 `/job-apply` 是纯拉丁，安全；只压一下字号免得比正文抢眼。 */
+.mat-gap code { font-size: 0.92em; }
+
+/* 批量跑下来卡住的岗，逐条列。每行四段：岗位 / 公司 / 缺什么 / 卡在哪一步。
+   缺什么排在最前的可读位置——那是用户要动手的那一句。 */
+.blocked-list { flex: 1 1 100%; margin: 2px 0 0; padding: 0; list-style: none; }
+.blocked-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  align-items: baseline;
+  padding: 5px 0;
+  border-top: 1px solid color-mix(in srgb, var(--edge) 70%, transparent);
+  font-size: 12.5px;
+}
+.blocked-list li > b { color: var(--lit); }
+.blocked-list li > i { color: var(--faint); font-style: normal; }
+.blocked-list li > span { flex: 1 1 18em; color: var(--dim); }
+.blocked-list li > em { color: var(--faint); font-style: normal; font-size: 11.5px; }
+
+
+/* ── 用户面板：列出这个 clone 下的所有人 + 该敲什么 ── */
+.mast-user { position: relative; }
+.userpop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  min-width: 258px;
+  padding: 12px 14px;
+  /* 浮层怎么和背后分开：**不靠投影**。
+     深色底上投影本来就不起作用——近黑的影打在近黑的底（--bay #0D1218）上几乎看不见，
+     原来那条 `0 12px 32px rgb(0 0 0 / .45)` 花了 32px 模糊半径却换不来多少分离度。
+     这也正是 tokens.ts 里「仪表盘要硬边，靠线分层而非靠影」那条规矩的由来。
+     改用调色板自己的语义：--panel-raised 就是「抬起的面板」那一档，
+     配 --edge-strong 的实边——在深色上，一个明确的色阶 + 一道硬边比任何投影都清楚。 */
+  border: 1px solid var(--edge-strong);
+  background: var(--panel-raised);
+  text-align: left;
+}
+.userpop-h {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  letter-spacing: 0.05em;
+  color: var(--faint);
+}
+.userpop-h + * { margin-bottom: 12px; }
+.userpop-list { margin: 0 0 12px; padding: 0; list-style: none; }
+.userpop-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.userpop-list li[data-active="true"] { color: var(--data); font-weight: 600; }
+.userpop-list em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--data);
+}
+.userpop-empty { color: var(--faint); }
+.userpop-note {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--faint);
+}
+
+
+/* ── 你的基简历 ── */
+.bresume-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 0;
+  font-size: 13px;
+}
+.bresume-row .kicker { flex-shrink: 0; min-width: 60px; }
+.bresume-secs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* 箭头两侧都要留白。`gap` 只落在**外层 span 之间**，而箭头长在下一个 span 的
+   开头（`{i > 0 && <em>→</em>}{s}`）——于是屏幕上是「个人优势 →工作经历」，
+   左边有空右边没有，一串下来全是歪的。 */
+.bresume-secs em { font-style: normal; color: var(--faint); margin-right: 6px; }
+.bresume-n, .bresume-never { font-size: 12.5px; color: var(--faint); }
+.bresume-verdict { font-size: 12.5px; color: var(--data); }
+/* PDF 比源文件旧、或章节读不出来——按钮能点、文件能开，只是内容不是你以为的
+   那份。整段横幅，必须显眼。用 --caution（提醒，不是告警）。 */
+.bresume-stale {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--caution);
+  background: color-mix(in srgb, var(--caution) 8%, transparent);
+  /* 不加圆角：全局是方形语言（tokens.ts「核心动作是盖章/判定，方形是它的形制语言」）。
+     左边那道 2px 亮边才是这个块的标记物，右侧收方反而让它更像一枚盖下去的印。 */
+  color: var(--caution);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+/* 审阅结论过期了要看得出来，但它是**行内**的一句小字（长在「上次审核」那一行里，
+   紧挨着日期和结论），不是横幅。
+   **所以不能跟上面共用类名**：那样它会顶着边框、底色和 8px 内边距，
+   在一行中间炸出一个方块 —— 简历改过不是出事，只是那句结论不作数了，
+   比正文轻一档就够。 */
+.bresume-audit-stale { font-size: 12px; color: var(--caution); }
+.bresume-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--faint);
+}
+
+
+/* 降权泊车的说明——解释流水线前两格的缺口，别让人当成积压 */
+.parked-note {
+  margin: -6px 0 14px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--faint);
+}
+.parked-note b { color: var(--data); font-variant-numeric: tabular-nums; }
+
+/* ---------- 全部命令（图形界面里的那份帮助） ---------- */
+.cmdbook-lead,
+.cmdbook-foot {
+  margin: 0 0 18px;
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: var(--faint);
+}
+.cmdbook-foot {
+  margin: 20px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--edge);
+}
+/* 命令块与说明之间要有呼吸；行内的 code 跟着基线走，不另设字距——
+   等宽加字距只对拉丁文成立，中文说明挨着它会被拉散。 */
+.cmdbook-foot .ant-typography code,
+.cmdbook-foot code {
+  margin: 0 4px;
+}
+.cmdbook-g + .cmdbook-g {
+  margin-top: 20px;
+}
+.cmdbook-g .kicker {
+  display: block;
+  margin-bottom: 9px;
+}
+.cmdbook-rows {
+  display: grid;
+  gap: 7px;
+}
+.cmdbook-row {
+  display: grid;
+  /* 命令一列定宽，说明一列吃剩下的——命令左对齐成一条线才扫得快。
+     宽度按**最长的那条**算。命令统一加 `job-` 前缀后每条长了 4 个字符，
+     现在最长的是 `/job-interview <公司>`：15 个拉丁字符等宽 13px 约 117px，
+     加 2 个汉字约 26px、复制图标约 18px，合计 ~161px ≈ 10em，12em 仍有余量。
+     （占位符也因此收短过：`<职位链接或整段职位描述>` 会撑到 20em，改回
+     `<职位链接>`，长的那个形式放进举例里。）
+     第一版拍脑袋写了 17.5em（≈245px），富余近 90px——命令和说明之间拉出一条
+     空沟，眼睛要横跨过去才读得到说明。定宽不是随便定的，要照最长的内容算。 */
+  grid-template-columns: 12em 1fr;
+  gap: 4px 14px;
+  align-items: baseline;
+}
+.cmdbook-row .ant-typography code {
+  white-space: nowrap;
+}
+
+/* ── 命令 chip：任何宽度都不断行，放不下就自己横滚 ──
+   chip 是个**带边框的复制目标**。一折就成了上下两个各自封边的方块、复制图标
+   落单（实测 390px 流水线：`/job-apply <` / `职位链接> ⧉`），读的人会以为
+   自己看漏了半条命令。
+   曾经试过放开 `white-space` 让它换行——溢出是没了，换来的正是上面那个断法，
+   而且波及面比当时查到的大得多：命令总览块 34 条在 ≤430px 全折，1024px 上
+   流水线 5 列（每格 ~190px）也折。**第一次只扫了 `.rail-cell` 和 `.nextstep`，
+   漏了最大的那一块**——所以这条现在不挂断点，全宽度生效。
+
+   `min-width: 0` 是配套的、不能省：chip 的祖先是 grid/flex 项，它们默认
+   `min-width: auto`（= 不小于内容），于是 `max-width: 100%` 量的是一个已经被
+   内容撑大的父盒子，等于没限制——实测加了 max-width 之后 ≤430px 照旧溢出。 */
+.cockpit .cmdbook-row .ant-typography code,
+.cockpit .rail-cell .ant-typography code,
+.cockpit .nextstep .ant-typography code,
+.cockpit .readout .ant-typography code {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  vertical-align: bottom;
+  /* **滚动条本身不要显示。** `overflow-x: auto` 是给窄屏兜底的，可它在**宽屏上
+     也长条**：2560px 视口下每个 chip 都挂着一条横的加一条竖的经典滚动条
+     （15px 一条，chip 本身才 26px 高），实测 60 个 chip 无一幸免。
+
+     两级放大：
+       · 真实溢出是 **0.01px** —— 内容右缘 839.79，内边距右缘 839.78。盒子是
+         0.85 倍缩放出来的小数（12.75px 字号、5.1px 内边距、0.667px 边框）+
+         DPR 1.5，`clientWidth` 向下取整、`scrollWidth` 向上取整，报出来就是 2px。
+       · 竖的那条**从没写过**：规范规定一轴非 visible 时另一轴的 visible 计算成
+         `auto`，于是 `overflow-y` 自动成了滚动容器。横条吃掉 15px 高 → 纵向溢出
+         → 竖条出现 → 又吃掉 15px 宽 → 横向更溢出，两条互相锁死。
+
+     所以 `overflow-x` 要留（窄屏上真放不下时还得靠它滚），显示要关。
+     不用 `overflow-y: hidden` 关竖的那条：那 3px 里含着字的下缘，hidden 会切。
+     隐藏之后 chip 从 126×42 回到 111×27。 */
+  scrollbar-width: none;
+}
+.cockpit .cmdbook-row .ant-typography code::-webkit-scrollbar,
+.cockpit .rail-cell .ant-typography code::-webkit-scrollbar,
+.cockpit .nextstep .ant-typography code::-webkit-scrollbar,
+.cockpit .readout .ant-typography code::-webkit-scrollbar { display: none; }
+/* 只给**命令 chip 那条链**上的盒子。第一版顺手把 `.nextstep-text` 和
+   `.rail-guide` 也铺了进来——而 `.nextstep-text` 自己写着 `min-width: 220px`
+   （它是 `flex: 1` 的文字，没有下限会被旁边的 chip 挤扁），当场被冲掉：
+   实测 320px 上那句「下一步」被压成 12px 宽、内容 38px，整条读不出来。
+   **min-width: 0 是解药也是毒**，只往真正需要收缩的那几个盒子上加。 */
+.cmdbook-row, .cmdbook-ex, .cmdbook-ex-i, .cmdbook-bare, .rail-cell { min-width: 0; }
+/* 滚动容器挂在**真正的 flex 项**上，不是挂在 chip 自己身上。
+   chip 的直接父级是 antd 的 `span.ant-typography`——一个没有确定宽度的行内盒，
+   `max-width: 100%` 对着它解析不出数值，等于没写（实测 390px 上 chip 照旧
+   224px 宽、右缘 451）。`.cmdbook-ex-i` 是 `.cmdbook-ex` 这个 flex 容器的项，
+   宽度是确定的，百分比在这里才有意义。 */
+.cmdbook-ex-i { max-width: 100%; overflow-x: auto; }
+.cmdbook-does {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--lit);
+}
+/* 举例接在说明底下、和说明同一列起头——挂到命令列下面的话，命令那条竖线就断了，
+   而那条线正是这张表能一眼扫完的原因。 */
+.cmdbook-ex {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-top: 2px;
+}
+.cmdbook-ex-i {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.cmdbook-ex .ant-typography code {
+  font-size: 12px;
+  opacity: 0.9;
+}
+.cmdbook-note,
+.cmdbook-say {
+  font-size: 12.5px;
+  color: var(--faint);
+}
+/* 窄屏改上下堆叠：并排会把说明挤成一列单字 */
+
+/* 「+浮动」：提成/绩效/计件的岗，表格里那个数只是底薪。
+   销售、律师、中介、保险的大头就在浮动上，不标出来会让人直接划过去。 */
+.annual-plus {
+  font-style: normal;
+  font-size: 12.5px;
+  color: var(--caution);
+  margin-left: 3px;
+}
+
+/* 可以投的岗位为空 —— 新用户跑完 /job-setup 后看到的第一屏。
+   不是「没数据」，是「下一步在这儿」。 */
+.shortlist-empty { padding: 26px 4px 22px; text-align: left; }
+.se-lead { margin: 0 0 16px; font-size: 14px; color: var(--lit); }
+.se-steps { display: grid; gap: 9px; margin-bottom: 16px; }
+.se-step {
+  display: grid; grid-template-columns: 8em 1fr; gap: 4px 14px;
+  align-items: baseline;
+}
+.se-step span { font-size: 13.5px; color: var(--dim); }
+.se-foot { margin: 0; font-size: 12.5px; color: var(--faint); }
+
+/* 日常那三条命令。和下面 18 条平铺在一起就等于没突出，所以给一层底和一道左边框。 */
+.cmdbook-spine {
+  margin: 14px 0 22px;
+  padding: 12px 14px 8px;
+  border-left: 2px solid var(--data);
+  background: color-mix(in srgb, var(--data) 6%, transparent);
+}
+.cmdbook-spine .kicker { margin-bottom: 8px; }
+
+/* 「不填参数会怎样」。和举例区分开：举例是「还能怎么敲」，这条是「不敲会怎样」。 */
+.cmdbook-bare {
+  grid-column: 2;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--dim);
+}
+.cmdbook-bare-k {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--edge);
+  color: var(--dim);
+  font-size: 12.5px;
+}
+
+/* 「挂了」之后的可选原因。芯片式：点一下就写盘，没有保存按钮——
+   多数拒信不说理由，不填是正常路径，不该为它加一步确认。 */
+.why-row {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  margin-top: 8px; font-size: 12px;
+}
+.why-k { color: var(--dim); margin-right: 2px; }
+.why-chip {
+  padding: 2px 9px; cursor: pointer;
+  border: 1px solid var(--edge); background: transparent;
+  color: var(--lit); font: inherit; line-height: 1.7;
+}
+.why-chip:hover:not(:disabled) { border-color: var(--data); color: var(--data); }
+.why-chip:disabled { opacity: .5; cursor: default; }
+
+/* 投后统计 */
+.ostats-top { display: flex; flex-wrap: wrap; gap: 26px; margin-bottom: 16px; }
+.ostats-big { display: flex; flex-direction: column; gap: 2px; }
+.ostats-big b { font-size: 25px; color: var(--data); line-height: 1.1; }
+.ostats-big span { font-size: 12px; color: var(--dim); }
+.ostats-bar { display: flex; gap: 2px; height: 34px; margin-bottom: 8px; }
+.ostats-bar span {
+  display: flex; flex-direction: column; justify-content: center;
+  min-width: 60px; padding: 0 8px;
+  background: color-mix(in srgb, var(--dim) 16%, transparent);
+}
+.ostats-bar i { font-style: normal; font-size: 11px; color: var(--dim); }
+.ostats-bar b { font-size: 13px; color: var(--lit); }
+.ostats-bar .ob-约面或更远 { background: color-mix(in srgb, var(--data) 26%, transparent); }
+.ostats-bar .ob-被拒 { background: color-mix(in srgb, var(--caution) 20%, transparent); }
+.ostats-note { font-size: 12px; color: var(--dim); margin: 6px 0 0; line-height: 1.7; }
+.ostats-band { margin-top: 18px; }
+.ostats-band table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.ostats-band th {
+  text-align: left; font-weight: 400; font-size: 12px;
+  color: var(--lit); padding: 4px 10px 4px 0; white-space: nowrap;
+}
+.ostats-band td { padding: 4px 10px 4px 0; font-size: 12px; color: var(--dim); }
+/* **只有横条那一栏该吃掉多余的宽度，其余三栏各自贴着自己的内容。**
+   原来只给横条定了 55%，剩下 45% 被三栏均分：「投了几个」那个数落在一片空白的
+   最左边，离左边的档位标签 300px、离右边的横条也 300px，读的时候跟谁都对不上。
+   只把计数收窄又会翻到另一头——档位标签那一栏转而吃掉 895px，横条被挤到 144px。
+   四栏里三栏写 1%（配 nowrap 即「按内容宽」），横条写 auto，才是想要的那个形状。 */
+.ostats-band th { width: 1%; }
+.ostats-band td:nth-child(2) { width: 1%; white-space: nowrap; text-align: right; }
+.ostats-band td:nth-child(3) { width: auto; }
+.ostats-band td:last-child { width: 1%; white-space: nowrap; text-align: right; }
+/* 方形语言：这一页的条、章、标记都不带圆角（见 tokens.ts 顶上那段）。 */
+.ob-track {
+  display: block; height: 7px;
+  background: color-mix(in srgb, var(--dim) 16%, transparent);
+}
+.ob-track i { display: block; height: 100%; background: var(--data); }
+.ostats-reasons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+/* 11px 的药丸——`.funnel-chip` 那条注释点名要避的形状（「antd 默认 6px 圆角
+   会把方章变成药丸」），当时只改了那一处，这里漏了。同族的 .rec-chip /
+   .deep-chip / .mat-chip / .co-chip / .sent-chip 全是方的。 */
+.ostats-reasons span {
+  display: inline-flex; gap: 6px; align-items: baseline;
+  padding: 2px 9px; font-size: 12px;
+  border: 1px solid var(--edge); color: var(--lit);
+}
+.ostats-reasons b { color: var(--data); }
+
+/* 「不想看什么」——视图过滤。挨着计数放，那个数变小的原因就在旁边。 */
+.hide-wrap { position: relative; }
+.hide-toggle {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  background: none; border: 1px solid var(--edge);
+  color: var(--dim); font: inherit; font-size: 12.5px; padding: 2px 9px;
+}
+.hide-toggle:hover { border-color: var(--data); color: var(--data); }
+.hide-toggle b { color: var(--caution); }
+.hide-body {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 20;
+  width: min(420px, 86vw); padding: 14px 16px;
+  background: var(--panel-raised); border: 1px solid var(--edge-strong);
+  /* **全页唯一一处外投影**（别处的 box-shadow 全是 inset，当边框/圆环用，
+     grep 得到的那九处都是）。tokens.ts 把 antd 的三档阴影全关了（「靠线分层
+     而非靠影」），而这一块是唯一真正**浮在正文之上**的浮层——它盖住表头和前两行，
+     没有一点纵深就分不出是浮层还是插进去的一段。收得比原来紧：靠边框分层，
+     影子只负责说明「这是浮着的」。 */
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .5);
+}
+.hide-line {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  margin-bottom: 8px; font-size: 13px;
+}
+.hide-k { color: var(--dim); font-size: 12.5px; flex: none; }
+.hide-in {
+  flex: 1; min-width: 140px; padding: 3px 8px; font: inherit; font-size: 12.5px;
+  background: var(--bay); color: var(--lit);
+  border: 1px solid var(--edge);
+}
+.hide-in:focus { outline: none; border-color: var(--data); }
+.hide-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.hide-chips button {
+  padding: 2px 9px; cursor: pointer; font: inherit;
+  font-size: 12px; background: transparent; color: var(--dim);
+  border: 1px solid var(--edge);
+}
+.hide-chips button:hover { border-color: var(--lock); color: var(--lock); }
+.hide-chips button[data-on] {
+  border-color: var(--data-deep); background: rgba(60,203,191,.12); color: var(--data);
+}
+.hide-note { font-size: 12px; color: var(--faint); line-height: 1.7; margin: 0 0 10px; }
+.hide-clear {
+  background: none; border: 1px solid var(--edge);
+  color: var(--dim); font: inherit; font-size: 12.5px; padding: 3px 11px; cursor: pointer;
+}
+.hide-clear:hover { border-color: var(--lock); color: var(--lock); }
+.hide-n { display: inline-flex; gap: 4px; align-items: baseline; color: var(--caution); }
+.hide-n b { color: var(--caution); }
+
+/* 「这家投过」：说的是**公司**，不是这个岗。和「已投」（说这个岗）要能一眼分开，
+   所以走描边不走实底——实底在这一页只留给「已投」那种确定发生过的事。 */
+.co-chip {
+  display: inline-block; padding: 1px 6px; border-radius: 2px;
+  font-size: 12.5px; line-height: 1.6; white-space: nowrap;
+  border: 1px solid var(--caution); color: var(--caution);
+}
+
+/* ============================================================
+   窄屏补齐（原有断点在上面「响应式」那一节，**不要在这里再开一套**）
+
+   实测 430px 撞到的两件事，原有断点都没管：
+     · 职位表 401px 内容塞在 362px 的盒子里，`overflow-x: visible`
+       ——**没有兜底，直接顶出去把整页撑宽**，手机一打开就是横向滚动
+     · 「不想看什么」浮层写死 420px 宽，比屏幕还宽
+
+   流水线那条（5 → 2 列）原有的 900px 断点已经处理好了，连「奇数格落单会
+   显示成空卡片」都想到了——我第一版又写了一套 920/620，与它打架。删掉了。
+   ============================================================ */
+
+/* 表格自己横向滚，别把整页撑宽。
+   列有 min-width，硬压只会把中文挤成一字一行——让它在自己的盒子里滚，
+   页面纵向读、表格横向拖，是宽表在窄屏上唯一不牺牲信息的做法。 */
+.shortlist .ant-table-content { overflow-x: auto; }
+.shortlist .ant-table-content > table { min-width: 560px; }
+/* **但展开区不能跟着被拉宽。** 展开的详情是这张表里的一个单元格，于是在 375px 的
+   手机上它也被撑到 560px：实测 `.act` 宽 517px、硬性条件排成两列 254+254——
+   开场白、按钮、条件格全塞进一个要左右拖的盒子，而开场白正是这一屏唯一要复制
+   走的东西。上面「响应式」那一节里的 620px 断点用 `sticky + left:0` 把详情钉在
+   滚动容器的左边缘、宽度取可视宽度：表格照旧能横滚看列，详情永远整块可见。
+   那里还减掉了展开行自己那条 3px 左强调边——它在滚动容器**里面**，
+   `100vw` 不知道它存在，不减就正好溢出这 3px（实测右边缘 377 > 可视 375）。 */
+
+
+
+/* ---------- 招聘网站（数据从哪几家来） ---------- */
+/* 每行一条渠道：开关 / 怎么取数 / 抓了多少 / 最近哪天。
+   用 grid 而不是 flex，是为了让四列在各行之间**对齐成竖线**——
+   这一块的用途是横向比较（哪家产出高、哪家没抓），对不齐就比不了。 */
+.portal-rows { display: grid; gap: 8px; margin-top: 10px; }
+.portal-row {
+  display: grid;
+  grid-template-columns: 8.5em 11em 10em auto 1fr;
+  gap: 4px 14px;
+  align-items: baseline;
+  padding: 7px 0;
+  border-top: 1px solid var(--edge);
+  font-size: 13px;
+}
+.portal-row:first-child { border-top: 0; }
+/* 关掉的那几行整行压暗——但**不隐藏**：用户要看得见自己关了什么 */
+.portal-row.is-off { opacity: 0.5; }
+.portal-sw { display: inline-flex; align-items: baseline; gap: 7px; cursor: pointer; }
+.portal-sw input { cursor: pointer; }
+.portal-sw b { color: var(--lit); font-weight: 600; }
+.portal-how { color: var(--dim); }
+.portal-how i { font-style: normal; color: var(--faint); margin-left: 4px; }
+.portal-n { color: var(--lit); font-variant-numeric: tabular-nums; }
+.portal-n b { font-family: var(--mono); font-weight: 400; }
+.portal-n i { font-style: normal; color: var(--dim); margin-left: 5px; }
+/* 「读不到职位详情」是这一块最要紧的一条信息——它解释「抓了一堆却一个可投的都没有」 */
+.portal-warn {
+  padding: 1px 6px; border-radius: 2px; font-size: 12.5px; white-space: nowrap;
+  border: 1px solid var(--caution); color: var(--caution);
+}
+
+/* 在线简历上次刷新。**它是个按钮，不是标签** —— 这一块别处都是「看」的，
+   只有这一格是「记」的，所以给它可点的外观（虚线下边框 + 手型）。
+   四态四种颜色：没记过（淡）· 今天（正常）· 两周内（正常）· 超两周（琥珀）。
+   超两周才变色 —— 标记要标少数派，天天变色就没人看了。 */
+.portal-refresh {
+  padding: 1px 4px; font-size: 12.5px; white-space: nowrap; cursor: pointer;
+  background: transparent; border: 0;
+  border-bottom: 1px dashed var(--edge-strong); color: var(--dim);
+  font-family: inherit;
+}
+.portal-refresh:hover { color: var(--lit); border-bottom-color: var(--lit); }
+.portal-refresh[data-stale="unknown"] { color: var(--faint); }
+.portal-refresh[data-stale="old"] {
+  color: var(--caution); border-bottom-color: var(--caution);
+}
+.portal-refresh:disabled { cursor: default; opacity: .6; }
+
+/* 撞了平台风控的告警条。**放在列表之上**，不是行内小字：
+   这件事多数只有用户本人能解（去过一条短信），而他看到的现象只是「没新岗了」。 */
+.portal-alarm {
+  margin: 0 0 10px; padding: 10px 12px; border-radius: 3px;
+  border: 1px solid var(--lock); background: color-mix(in srgb, var(--lock) 8%, transparent);
+}
+.portal-alarm > b { color: var(--lock); font-size: 13px; }
+.portal-alarm ul { margin: 6px 0 6px; padding-left: 1.2em; }
+.portal-alarm li { font-size: 12.5px; line-height: 1.7; }
+.portal-alarm li i { color: var(--faint); font-style: normal; }
+/* 「去处理」——告警条的落点。只说「要验证」不给入口，等于把最后一步扔回给用户 */
+.portal-alarm .portal-fix {
+  margin-left: 8px; padding: 1px 8px; border-radius: 2px; font-size: 12px;
+  border: 1px solid var(--lock); color: var(--lock); text-decoration: none;
+  white-space: nowrap;
+}
+.portal-alarm .portal-fix:hover { background: var(--lock); color: var(--bay); }
+.portal-alarm-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+/* 「另有 N 个被你关掉了」——格子数被 prefs 压低时的说明。
+   不说的话岗位看起来是凭空少的。 */
+.rail-filtered {
+  margin: 2px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--faint);
+}
+.portal-unblock {
+  padding: 4px 12px; border-radius: 2px; font-size: 12.5px; cursor: pointer;
+  border: 1px solid var(--edge-strong); background: var(--panel-raised); color: var(--lit);
+}
+.portal-unblock:hover:not(:disabled) { border-color: var(--data); color: var(--data); }
+.portal-unblock:disabled { opacity: .5; cursor: default; }
+/* 勾着但被封 = 不抓。这条要挨着勾选框写，否则用户看到勾是开的会以为它在抓 */
+.portal-halt {
+  margin-left: 6px; padding: 0 5px; border-radius: 2px; font-style: normal;
+  font-size: 12.5px; border: 1px solid var(--lock); color: var(--lock);
+}
+/* 这里原来还有一条 `.portal-halt.is-waiting`：给 CLI 限流那种封控退到灰的一档，
+   理由是「用户既做不了也不用做，到点自动恢复」。**2026-08-26 裁定封控不再自动
+   到期之后那个理由就没了** —— 它要用户换网络出口，和「去过验证」一样是待办，
+   不该长得比另一种轻。样式跟着 `Portals.tsx` 那处一起撤掉了。 */
+.portal-alarm p { margin: 0; font-size: 12.5px; line-height: 1.7; color: var(--dim); }
+/* 被连带停掉的那条通道：比正文轻，但必须看得见 —— 用户会照「分开处理」
+   去开另一条，正好撞上升级成账号风控那条路。 */
+.portal-also { display: block; margin-top: 3px; font-style: normal;
+  font-size: 12.5px; color: var(--caution); }
+/* 「这条不是第一次撞了」：比连带那条更该被看见 —— 它说的是「这个出口不会好了」 */
+.portal-streak { display: block; margin-top: 3px; font-style: normal;
+  font-size: 12.5px; font-weight: 600; color: var(--danger, var(--caution)); }
+/* 命令前那句引导，和命令块之间不留空档 */
+.portal-probe { margin-bottom: 4px !important; }
+.portal-alarm code {
+  padding: 1px 5px; border-radius: 2px; font-size: 12px;
+  background: var(--panel-raised); color: var(--lit);
+}
+/* 被拦住的那一行本身也要看得出来，否则告警条和列表对不上号 */
+.portal-row.is-blocked > .portal-sw > b { color: var(--lock); }
+/* 「职位描述存了 N%」。平时是灰的一行数，低于两成才变成警示色——
+   常态不该有颜色，否则四家全是黄的，警示就不再是警示。 */
+.portal-jd {
+  font-size: 12.5px; white-space: nowrap; color: var(--faint);
+}
+.portal-jd.is-thin { color: var(--caution); }
+.portal-last { color: var(--faint); font-size: 12.5px; white-space: nowrap; }
+/* 备注单独一行铺满，别挤进上面那几列——它是句子不是字段 */
+.portal-note {
+  grid-column: 1 / -1;
+  color: var(--faint); font-size: 12px; line-height: 1.6;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.portal-foot { margin: 12px 0 0; font-size: 12.5px; color: var(--faint); line-height: 1.7; }
+.portal-err { color: var(--caution); }
+
+/* 「这几类岗要不要看」——复用渠道那一块的行布局，只是列少两个 */
+.jobprefs-lead { margin: 0 0 12px; font-size: 13px; line-height: 1.75; color: var(--faint); }
+.jobprefs-lead b { color: var(--lit); }
+.jobpref-row { grid-template-columns: 18em 6em 1fr; }
+
+/* 列表搜索条 */
+.sl-search {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+/* 「搜到 N 个 / 共 M 个」——**搜不到时也要说话**。一个空表加一个空搜索框，
+   用户分不清是「没有这样的岗」还是「筛选器还开着」，这一页最常见的失败模式。 */
+.sl-search-n { font-size: 12.5px; color: var(--faint); }
+.sl-search-n b { color: var(--lit); font-family: var(--mono); font-weight: 400; }
+
+/* 短名单表头的第二行提示：猎头压满这一档时指向具名直招的那批。
+   和 `.sl-const` 同族，但它给的是**出路**不是**概括**，所以要能分辨 —— 
+   用左边一道细线区分，不另起颜色（这一行不是警告）。 */
+.cockpit .sl-const-alt {
+  border-left: 2px solid var(--edge);
+  padding-left: 8px;
+  margin-top: 2px;
+}
+
+/* 「不投的岗位」展开后第一行：卡在硬性条件上的按门归一计数。
+   它是这一段的**导语**，不是行 —— 和下面那一千多行拉开一档。 */
+.cockpit .shelf-tally {
+  /* 字号跟 `.sl-const` 齐（12.5px 是中文的下限，别再低）。
+     不设的话继承 15px —— 一段导语比它下面那一千多行还大一号。 */
+  color: var(--dim);
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.cockpit .shelf-tally-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--faint);
+}
+
+/* 「这档得先问」——同一枚章的**弱**变体：话是真的，但背后没有清单。
+   不另起颜色（它不是警告，是少一样东西），只把边框调虚一档。 */
+.cockpit .ask-chip[data-thin] {
+  border-style: dashed;
+}
+
+/* 「资料和简历里都没有」的那一类——和「忘了写」用同一枚标签，但要分得开：
+   一个是改简历就完事，一个是要么补能力要么认了。虚线边框，不另起颜色。 */
+.cockpit .rread-gap[data-hard] {
+  border-style: dashed;
+}
+
+/* ── 设置 / 统计 / 说明：一排文字按钮 ──────────────────────────
+   这七块原来是正文里的七段折叠，收起来也各占一行加外边距。中间试过侧边抽屉，
+   用户 2026-08-24 否掉了；现在是文字按钮 + Modal。
+
+   **按钮上必须放得下那句结论**（「上次审于 X，之后改过没再审」这种），
+   所以不是图标钮、也不是等宽窄条：可换行、可长、左对齐读得像一句话。 */
+/* 还没建过档的人：命令表直接摊开（判据见 App.tsx 那段注释）。
+   不套边框 —— 它此刻是正文，不是一个「可以点开的东西」。 */
+.firstrun { margin: 0 0 24px; }
+.firstrun-h {
+  margin: 0 0 10px; color: var(--lit); font-size: 15px; font-weight: 600;
+}
+
+/* ── HR 常问的那几句 ────────────────────────────────────────────
+   每条：问题 + 答案 + 「复制 / 改」。答案是要**直接粘进聊天框**的字，
+   所以按原样保留换行（`pre-wrap`）—— 折成一段会把他排好的分行毁掉。 */
+.hrqa-todo {
+  margin: 0 0 14px; padding: 8px 12px; font-size: 13px; line-height: 1.6;
+  color: var(--caution); border: 1px dashed var(--caution);
+}
+.hrqa-err { margin: 0 0 12px; color: var(--lock); font-size: 13px; }
+.hrqa-item {
+  padding: 12px 0; border-bottom: 1px solid var(--edge);
+}
+.hrqa-item:last-of-type { border-bottom: 0; }
+.hrqa-q { margin: 0 0 6px; color: var(--lit); font-size: 14px; font-weight: 600; }
+/* 没写的那几条要一眼认出来 —— 混在写好的里面等于没标。 */
+.hrqa-flag {
+  margin-left: 8px; font-size: 12px; font-style: normal; color: var(--caution);
+}
+.hrqa-a {
+  margin: 0 0 8px; color: var(--dim); font-size: 13.5px; line-height: 1.75;
+  white-space: pre-wrap;
+}
+.hrqa-a.is-blank { color: var(--faint); }
+.hrqa-edit {
+  width: 100%; margin: 0 0 8px; padding: 8px 10px; resize: vertical;
+  font: inherit; font-size: 13.5px; line-height: 1.75;
+  color: var(--lit); background: var(--bay); border: 1px solid var(--edge-strong);
+  border-radius: 2px; white-space: pre-wrap;
+}
+.hrqa-edit:focus-visible { outline: 2px solid var(--data); outline-offset: 1px; }
+.hrqa-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.hrqa-btn {
+  padding: 4px 12px; cursor: pointer; font: inherit; font-size: 12.5px;
+  color: var(--dim); background: transparent; border: 1px solid var(--edge-strong);
+  border-radius: 2px;
+}
+.hrqa-btn:hover:not(:disabled) { color: var(--lit); border-color: var(--data); }
+.hrqa-btn:disabled { opacity: 0.45; cursor: default; }
+.hrqa-btn:focus-visible { outline: 2px solid var(--data); outline-offset: 2px; }
+.hrqa-foot { margin: 14px 0 0; color: var(--faint); font-size: 12.5px; line-height: 1.7; }
+
+.deskbar {
+  display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 24px;
+}
+.deskbtn {
+  display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
+  flex: 1 1 260px; max-width: 100%; text-align: left; cursor: pointer;
+  padding: 10px 14px; font: inherit; font-size: 13.5px; line-height: 1.5;
+  color: var(--dim); background: var(--panel); border: 1px solid var(--edge);
+  border-radius: 2px;
+}
+.deskbtn:hover { border-color: var(--data); background: var(--panel-raised); }
+.deskbtn:focus-visible { outline: 2px solid var(--data); outline-offset: 2px; }
+.deskbtn-name { color: var(--lit); font-weight: 600; font-size: 14px; }
+.deskbtn-note { color: var(--dim); }
+/* 告警点亮整颗按钮 —— 一枚小圆点在这一排里会被当成装饰。 */
+.deskbtn[data-alarm] { border-color: var(--lock); }
+/* 三枚标记三种意思，颜色要分得开：要你处理（告警色）· 等它自己好（提示色）·
+   你自己关的（中性 —— 它不是待办，是让那个决定看得见代价）。
+   **都不加 `margin-left: auto`**：它们要排成一排，不许有谁自己贴到最右边
+   （这条规矩是从上一版那三枚标记继承下来的）。 */
+.deskbtn-alarm { color: var(--lock); font-weight: 600; }
+/* 这里原来还有 `[data-tone="wait"]`（「等它自己好」，琥珀）。2026-08-26 裁定
+   封控不再自动到期之后没有东西是等的了 —— 两种封控都要人动手，差别由文案
+   承担。色和类型里那个成员一起撤了（见 App.tsx 那份 `chips` 的注释）。 */
+.deskbtn-alarm[data-tone="off"] { color: var(--faint); font-weight: 400; }
+.deskbtn-chip { margin-left: auto; color: var(--caution); }
+
+/* 弹窗里那几块自带间距，不要再挂外边距。 */
+.desk-modal .panel-collapse { margin-bottom: 0 !important; }
+
+
+/* 待评那批放旧了才出现的一句。**用警示色，但不加粗** ——
+   它是补充说明，不该盖过同一行里那个「还有 N 个没评分」。 */
+.parked-stale { color: var(--caution); }
+
+
+/* ── 命令块为什么**不**加 `white-space: nowrap` ──────────────────
+   2026-08-29 试过一次，撤了。
+
+   起因：1024px 下「先跑 python」换行「tools/archive.py --revive ⧉」，
+   看着像命令被劈成两半。改法是 `display:inline-block; white-space:nowrap;
+   max-width:100%; overflow-x:auto`。
+
+   **代价比病症大。** 实测同一份页面：9 个命令块里 8 个当场冒出滚动条，
+   而溢出量只有 1–2px —— `overflow-x:auto` 撞上亚像素取整，`scrollWidth`
+   向上取整、`clientWidth` 向下取整，差 1px 就把滚动条画出来。文字明明
+   完整显示着，下面却挂一条滚动条，比原来那次换行难看得多，而且是 8 处。
+
+   回头看，原来那个「问题」本身不成立：它断在 `python` 和 `tools/` 之间的
+   **空格**处，那是正常换行，不是把 token 劈开。命令块要的是「一眼认得出、
+   点得动」，换行不影响这两件事 —— 复制按钮复制的始终是整条。
+
+   真要再动这里，先问一句：它断在空格处还是断在 token 中间。只有后者才是缺陷。 */

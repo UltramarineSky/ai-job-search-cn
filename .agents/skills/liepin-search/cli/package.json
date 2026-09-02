@@ -1,0 +1,20 @@
+{
+  "name": "liepin-cli",
+  "version": "1.0.0",
+  "description": "猎聘公开职位搜索 CLI —— 免登录、零运行时依赖。仅供个人求职使用。",
+  "type": "module",
+  "main": "src/cli.ts",
+  "bin": {
+    "liepin-search": "src/cli.ts"
+  },
+  "scripts": {
+    "start": "node src/cli.ts",
+    "test": "bun test --timeout 30000",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/bun": "1.3.14"
+  }
+}

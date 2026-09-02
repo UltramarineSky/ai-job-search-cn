@@ -1,0 +1,242 @@
+# CI for the framework itself: Typst smoke compile, skill/command lint,
+# CLI typechecks, and placeholder integrity.
+#
+# Personal data lives under users/<name>/ (gitignored), so the tracked
+# profile.example/ and cover_letter/example.typ must keep their placeholder
+# tokens - placeholder-integrity fails the build if one goes missing, which
+# is the signature of real data having been committed by mistake.
+#
+# Deliberately NOT here: live smoke tests of the job-portal CLIs. They hit
+# real portals (network-flaky, and hammering liepin's public endpoint from CI
+# would be abusive - its live suite already gates itself behind LIEPIN_LIVE,
+# see search.live.test.ts's describe.skipIf). CI runs typechecks and the
+# checked-in fixture/mock test suites only; live portal testing stays a
+# local, on-demand step.
+#
+# Security posture: this repo ships pre-approved Claude Code permissions
+# and CLI code that every user executes, so the security-guards job
+# fails PRs that widen settings.json permissions, weaken the personal-data
+# gitignore rules, or add package lifecycle scripts; dependency-review flags
+# newly introduced vulnerable/malicious dependencies. Honest limit: a PR can
+# edit this workflow itself, so these guards catch accidents and casual
+# attempts, not a determined author - branch protection with required checks
+# and human review of workflow/settings diffs remain the real backstop.
+# Actions 用大版本标签（不再钉 SHA —— 取舍是「自动收安全补丁」优先于
+# 「完全可复现」，代价是上游改标签就跟着变）；token 是只读的。
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint skills, commands, settings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - run: python tools/lint_skills.py
+
+  security-guards:
+    name: Security guards (permissions, gitignore, manifests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python tools/security_guards.py
+
+  python-tests:
+    name: Python tool tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m unittest discover -s tests -t . -v
+
+  dependency-review:
+    name: Dependency review (PRs)
+    # Requires the repo's Dependency graph, so the graph is probed first.
+    # If it is unavailable, the job warns and passes instead of hard-failing
+    # (the same graceful-skip pattern the workflow uses for optional tools).
+    # Enabling Dependency graph under Settings -> Advanced Security activates
+    # the real check.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Probe Dependency graph availability
+        id: graph
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/dependency-graph/sbom")
+          if [ "$code" = "200" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Dependency graph is not enabled on this repository (HTTP $code). Dependency review was skipped - enable Dependency graph under Settings -> Advanced Security to activate this check."
+          fi
+      - name: Dependency review
+        if: steps.graph.outputs.enabled == 'true'
+        # 只能钉全版本号：这个 action **不维护浮动的大版本标签**
+        # （`refs/tags/v5`、`v4` 都是 404，它只发到浮动 `v3`），
+        # 写成 @v5 会报 Unable to resolve action。别"顺手"改短。
+        # 2026-08-20 用 git/ref/tags 与 tags 列表两种方式各验过一次。
+        uses: actions/dependency-review-action@v5.0.0
+        with:
+          fail-on-severity: high
+
+  typst-smoke:
+    name: Typst 模板冒烟编译
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: 安装 Typst
+        run: |
+          curl -fsSL https://github.com/typst/typst/releases/latest/download/typst-x86_64-unknown-linux-musl.tar.xz \
+            | tar -xJ --strip-components=1 -C /usr/local/bin typst-x86_64-unknown-linux-musl/typst
+          typst --version
+      # 中文字体是这个 job 的**前提**，不是可选项：没有任何覆盖中日韩的字体时，
+      # typst 照样编译成功（只 warning: unknown font family），但汉字**进不了
+      # PDF 的文本层**——下面那条 `--contains "张三"` 会红，招聘系统也读不出字。
+      # 2026-08-20 用 `typst compile --ignore-system-fonts` 实测过这个差别。
+      # 原来这一步只在 poppler 缺失时才 apt，且从不装字体，绿不绿全看 runner
+      # 镜像碰巧带没带。改成无条件装，`fonts-noto-cjk` 提供的
+      # "Noto Sans CJK SC" / "Noto Serif CJK SC" 正在模板的字体栈里。
+      - name: Install PDF inspection tools and a CJK font
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils fonts-noto-cjk
+      - name: 编译示例简历
+        run: |
+          typst compile resume/example.typ /tmp/example.pdf
+          python3 tools/verify_pdf.py /tmp/example.pdf --min-chars 100 \
+            --contains "张三" --contains "test@example.com"
+      - name: 编译示例求职信
+        run: |
+          typst compile cover_letter/example.typ /tmp/cover_letter_example.pdf
+          python3 tools/verify_pdf.py /tmp/cover_letter_example.pdf --min-chars 100 \
+            --contains "test@example.com"
+
+  discover-cli-tools:
+    # Portal skills are pluggable (added via /job-add-portal, removed by deleting
+    # their directory), so the CLI matrix is discovered from the actual
+    # .agents/skills/*/cli tree on disk instead of being hardcoded here. This
+    # also means a fork sitting at zero portals (as this branch currently is,
+    # between removing the non-CN portals and adding liepin-search) doesn't
+    # need this workflow edited to stay green - see has_tools below.
+    name: Discover portal CLI tools
+    runs-on: ubuntu-latest
+    outputs:
+      tools: ${{ steps.discover.outputs.tools }}
+      has_tools: ${{ steps.discover.outputs.has_tools }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Find portal CLI directories under .agents/skills/*/cli
+        id: discover
+        run: |
+          tools=$(python3 - <<'PY'
+          import json
+          import pathlib
+
+          root = pathlib.Path(".agents/skills")
+          names = sorted(
+              p.parent.parent.name for p in root.glob("*/cli/package.json")
+          ) if root.is_dir() else []
+          print(json.dumps(names))
+          PY
+          )
+          echo "tools=$tools" >> "$GITHUB_OUTPUT"
+          if [ "$tools" = "[]" ]; then
+            echo "has_tools=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_tools=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  cli-checks:
+    name: CLI checks ${{ matrix.tool }}
+    needs: discover-cli-tools
+    # Zero portals installed is a legitimate state (see discover-cli-tools
+    # above): skip this job cleanly instead of failing on an empty matrix.
+    if: needs.discover-cli-tools.outputs.has_tools == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tool: ${{ fromJson(needs.discover-cli-tools.outputs.tools) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+        working-directory: .agents/skills/${{ matrix.tool }}/cli
+      - run: bun run typecheck
+        working-directory: .agents/skills/${{ matrix.tool }}/cli
+      - name: Run fixture/mock tests when present
+        run: |
+          if find tests -type f -name '*.test.ts' | grep -q .; then
+            bun test
+          else
+            echo "No Bun tests found for ${{ matrix.tool }}; skipping"
+          fi
+        working-directory: .agents/skills/${{ matrix.tool }}/cli
+
+  web-build:
+    name: Dashboard typecheck + build (web/)
+    # 总览页是 `/job-dashboard` 的全部：`serve.py` 只发 `web/dist/`，没有它
+    # 直接退出「web/dist 不存在」。而在这个 job 之前，CI 里**没有任何一步**
+    # 碰过 web/ —— `package.json` 里的 typecheck / build 两个脚本谁也没跑，
+    # 一个 TS 错误可以一路绿灯合进来，直到用户自己 npm run build 才炸。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npm run typecheck
+        working-directory: web
+      # `build` 跑的是 `tsc -b && vite build` —— typecheck 过不等于打得出包
+      # （import 路径、资源引用是构建期才报的）。两步都要。
+      - run: npm run build
+        working-directory: web
+
+  placeholder-integrity:
+    name: Placeholder integrity (个人数据没被提交进来)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Tracked template files must keep their placeholder tokens
+        run: |
+          fail=0
+          check() {
+            if ! grep -q "$2" "$1"; then
+              echo "::error file=$1::expected placeholder token $2 - personal data may have been committed"
+              fail=1
+            fi
+          }
+          check profile.example/candidate.md '\[YOUR_NAME\]'
+          check profile.example/search-queries.md '\[YOUR_PRIMARY_CITY\]'
+          check profile.example/behavioral.md '\[YOUR_MBTI\]'
+          check profile.example/interview-star.md '\[STAGE_1_NAME\]'
+          check cover_letter/example.typ '\[姓名\]'
+          exit $fail

@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>AI 求职助手 · social card</title>
+<!--
+  GitHub 社交预览图的源文件（1280×640）。渲染方法见 assets/README.md。
+
+  这里的每一个色值、字体栈与形制都取自 web/src/theme/tokens.ts 与 cockpit.css，
+  **不另造一套**——标识与产品长得不一样，是最容易发生也最没必要的分叉。
+
+  主视觉不是标语，是产品最有主张的那一刻：一次判定。多数岗被硬性条件刷掉、
+  不打分（分数栏是「—」不是 0），一个亮着。这就是它替你做的事。
+-->
+<style>
+  :root {
+    /* 逐字取自 palette，test_contrast.py 验过对比度 */
+    --bay: #0D1218;
+    --panel: #151C25;
+    --panel-raised: #1C2530;
+    --edge: #2A3542;
+    --edge-strong: #374553;
+    --lit: #EAF1F7;
+    --dim: #A8B4C2;
+    --faint: #8494A5;
+    --data: #3CCBBF;
+    --data-deep: #1E6E68;
+    --caution: #E8AC3A;
+    --lock: #E86259;
+
+    --sans: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    --serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "SimSun", serif;
+    --mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 1280px; height: 640px;
+    background: var(--bay);
+    color: var(--lit);
+    font-family: var(--sans);
+    display: flex; flex-direction: column;
+    padding: 62px 76px 58px;
+  }
+
+  /* ── 页头 ───────────────────────────────────────────────── */
+  .head { display: flex; align-items: center; gap: 17px; }
+  .mark { width: 46px; height: 46px; flex-shrink: 0; }
+  .name { font-size: 29px; font-weight: 700; letter-spacing: .012em; line-height: 1; }
+  /* 「中文版」是限定不是主语，压一级 */
+  .name span { color: var(--dim); font-weight: 500; }
+  .badge {
+    margin-left: auto; align-self: center;
+    font-size: 15px; color: var(--faint); letter-spacing: .01em;
+  }
+  /* 纯数字才用等宽 —— 中文套等宽会被拉成散字（AGENTS.md 的排版规矩） */
+  .badge b { font-family: var(--mono); font-weight: 500; color: var(--dim); }
+
+  /* ── 判定台：主视觉 ─────────────────────────────────────── */
+  /* 台面的说明行。**只有数字用等宽**——中文套等宽会被拉成散字。
+     它让下面三行明显是「样本」而不是全部，也把漏斗用数说出来。 */
+  .caption {
+    margin-top: 40px; margin-bottom: 13px;
+    display: flex; align-items: baseline; gap: 11px;
+    font-size: 16px; color: var(--faint);
+  }
+  .caption b {
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
+    font-size: 19px; font-weight: 700; color: var(--dim);
+  }
+  .caption .cut b { color: var(--lock); }
+  .caption .keep b { color: var(--data); }
+  .caption i { font-style: normal; color: var(--edge-strong); }
+
+  .deck {
+    border: 1px solid var(--edge);
+    background: var(--panel);
+  }
+  .row {
+    display: flex; align-items: center; gap: 30px;
+    padding: 25px 30px;
+    border-bottom: 1px solid var(--edge);
+  }
+  .row:last-child { border-bottom: 0; }
+
+  /* 被刷掉的两行：整行压暗，读者的眼睛不会停在这儿 */
+  .row.out .job { color: var(--faint); }
+  .row.out .why { color: var(--dim); }
+
+  /* 过的那一行：抬起 + 左侧一道青边，是全卡唯一被点亮的地方 */
+  .row.in {
+    background: var(--panel-raised);
+    box-shadow: inset 3px 0 0 var(--data);
+  }
+
+  .stamps { display: flex; gap: 8px; flex-shrink: 0; }
+  .stamp {
+    width: 44px; height: 44px;
+    display: grid; place-items: center;
+    font-family: var(--serif); font-size: 21px; font-weight: 700; line-height: 1;
+    position: relative;
+  }
+  .stamp::before { content: ""; position: absolute; inset: 0; border-radius: 2px; }
+  .stamp > i { position: relative; z-index: 1; font-style: normal; }
+
+  .stamp.pass { color: var(--bay); }
+  .stamp.pass::before {
+    background: var(--data);
+    box-shadow: inset 0 0 0 2px var(--bay), inset 0 0 0 3px var(--data);
+  }
+  .stamp.fail { color: #fff; }
+  .stamp.fail::before {
+    background: var(--lock);
+    /* 斜纹比产品里淡一档：卡会被缩到 ~400px 看，原密度会把印文吃掉。
+       形制仍在（缩图上分得出实心与斜纹），可读性优先。 */
+    background-image: repeating-linear-gradient(45deg, rgba(0,0,0,.30) 0 2.5px, transparent 2.5px 8px);
+    box-shadow: inset 0 0 0 2px var(--bay), inset 0 0 0 3px var(--lock);
+    text-shadow: 0 1px 2px rgba(0,0,0,.55);
+  }
+  .stamp.unknown { color: var(--caution); }
+  .stamp.unknown { opacity: .82; }
+  .stamp.unknown::before {
+    box-shadow: inset 0 0 0 2px var(--caution);
+    background: transparent;
+  }
+
+  .body { flex: 1; min-width: 0; }
+  .job { font-size: 22px; line-height: 1.3; }
+  .why { margin-top: 8px; font-size: 17px; line-height: 1.3; color: var(--faint); }
+  .why em { font-style: normal; color: var(--lock); }
+  .row.in .why em { color: var(--data); }
+
+  /* 分数栏：整张卡上唯一的等宽，因为它是唯一要对齐比较的数 */
+  .score {
+    width: 72px; flex-shrink: 0; text-align: right;
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
+    font-size: 40px; font-weight: 700; line-height: 1;
+  }
+  .score.none { color: var(--edge-strong); font-size: 34px; }
+  .row.in .score { color: var(--data); }
+
+  /* ── 页脚 ───────────────────────────────────────────────── */
+  .foot { margin-top: auto; padding-top: 30px;
+          display: flex; align-items: baseline; gap: 18px; }
+  .claim { font-size: 23px; font-weight: 500; line-height: 1.3; letter-spacing: .004em; }
+  .claim b { font-weight: 700; }
+  .where { margin-left: auto; font-size: 16px; color: var(--faint); white-space: nowrap; }
+</style>
+
+<div class="head">
+  <!-- 标识内联，渲染时不依赖外部文件 -->
+  <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+    <defs>
+      <pattern id="h" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+        <rect width="6" height="6" fill="#E86259"/>
+        <rect width="2.4" height="6" fill="#0D1218" opacity=".34"/>
+      </pattern>
+    </defs>
+    <rect width="64" height="64" fill="#0D1218"/>
+    <rect x="7" y="7" width="23" height="23" fill="#3CCBBF"/>
+    <rect x="34" y="7" width="23" height="23" fill="url(#h)"/>
+    <rect x="8.5" y="35.5" width="20" height="20" fill="#E8AC3A" opacity=".10"/>
+    <rect x="8.5" y="35.5" width="20" height="20" fill="none" stroke="#E8AC3A" stroke-width="3"/>
+    <rect x="35.5" y="35.5" width="20" height="20" fill="none" stroke="#374553" stroke-width="2.5" stroke-dasharray="5 4"/>
+    <rect x="2.5" y="2.5" width="59" height="59" fill="none" stroke="#2A3542" stroke-width="3"/>
+  </svg>
+  <div class="name">AI 求职助手 <span>· 中文版</span></div>
+  <div class="badge">365 开源计划 <b>#029</b></div>
+</div>
+
+<div class="caption">
+  <span>这一轮</span>
+  <span>抓到 <b>63</b></span><i>／</i>
+  <span class="cut">硬性条件刷掉 <b>41</b></span><i>／</i>
+  <span>打分 <b>22</b></span><i>／</i>
+  <span class="keep">可以投 <b>9</b></span>
+</div>
+
+<div class="deck">
+  <div class="row out">
+    <div class="stamps">
+      <span class="stamp fail"><i>否</i></span>
+      <span class="stamp pass"><i>过</i></span>
+      <span class="stamp pass"><i>过</i></span>
+      <span class="stamp unknown"><i>疑</i></span>
+    </div>
+    <div class="body">
+      <div class="job">某上海计算机软件公司 · AI 产品经理（Agent 方向）</div>
+      <div class="why"><em>不满足硬性条件</em>（学历院校：只要 985／211）</div>
+    </div>
+    <div class="score none">—</div>
+  </div>
+
+  <div class="row out">
+    <div class="stamps">
+      <span class="stamp pass"><i>过</i></span>
+      <span class="stamp fail"><i>否</i></span>
+      <span class="stamp pass"><i>过</i></span>
+      <span class="stamp unknown"><i>疑</i></span>
+    </div>
+    <div class="body">
+      <div class="job">某杭州整车制造上市公司 · 数字化转型专家</div>
+      <div class="why"><em>不满足硬性条件</em>（外包驻场）</div>
+    </div>
+    <div class="score none">—</div>
+  </div>
+
+  <div class="row in">
+    <div class="stamps">
+      <span class="stamp pass"><i>过</i></span>
+      <span class="stamp pass"><i>过</i></span>
+      <span class="stamp pass"><i>过</i></span>
+      <span class="stamp unknown"><i>疑</i></span>
+    </div>
+    <div class="body">
+      <div class="job">某上海人工智能公司 · AI 产品经理（Agent 方向）</div>
+      <div class="why"><em>值得投</em> · 薪资还没写几薪，投之前问清</div>
+    </div>
+    <div class="score">78</div>
+  </div>
+</div>
+
+<div class="foot">
+  <div class="claim">它先替你说「不」，<b>剩下的才值得你花时间</b>。</div>
+  <div class="where">全程在你自己的机器上跑</div>
+</div>
