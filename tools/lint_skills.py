@@ -46,10 +46,25 @@ for _s in (sys.stdout, sys.stderr):
 
 
 
+# PyYAML 是这个脚本**唯一**的第三方依赖（流水线全程只用标准库，README「要装什么」
+# 那张表里也只有这一行）。**但缺它不能让 `--help` 一起死**：本仓库对每个工具的契约是
+# 「`--help` 不干活、退 0」（`tests/test_cli_contract.py`、`test_terminal_encoding.py`
+# 都按这条枚举 `tools/*.py`）。
+#
+# 这里原来是模块级 `sys.exit`，于是没装 pyyaml 的机器上：
+#   lint_skills.py --help        → 退出码 1，印一句看不出是「少装东西」的话
+#   lint_skills.py --不存在的参数 → 退出码 1，而契约要求 argparse 的 2
+#
+# **两条都被测试钉着，却一直是绿的 —— 因为开发机上 pyyaml 装着。**
+# 首次公开推送的 CI（ubuntu，没装 pyyaml）当场红了 7 个 error + 2 个 failure。
+# 改成延迟到真要解析 YAML 那一刻才报，`--help` 与参数校验照常走 argparse。
 try:
     import yaml
-except ImportError:
-    sys.exit("lint_skills.py requires PyYAML: pip install pyyaml")
+except ImportError:                                   # pragma: no cover - 环境相关
+    yaml = None
+
+#: 真要用 YAML 时才报缺依赖。退出码 1 = 「这件事此刻做不了」（同仓库其余工具的约定）。
+_NEED_YAML = "lint_skills.py requires PyYAML: pip install pyyaml"
 
 ROOT = Path(__file__).resolve().parent.parent
 errors: list[str] = []
@@ -531,6 +546,10 @@ def main() -> int:
     # 拷过去的只有它自己，任何跨文件 import 都会在那边直接 ImportError。
     import argparse
     argparse.ArgumentParser(description="检查 skill/命令 stub 与 workflows 的接线是否一致").parse_args()
+    # `--help` 与未知参数在上一行就已经由 argparse 处理完并退出了，所以这道
+    # 依赖检查放在它**后面** —— 缺 pyyaml 不该让「问一句怎么用」也失败。
+    if yaml is None:
+        sys.exit(_NEED_YAML)
     skills = sorted(ROOT.glob(".claude/skills/*/SKILL.md")) + sorted(ROOT.glob(".agents/skills/*/SKILL.md"))
     commands = sorted((ROOT / ".claude" / "commands").glob("*.md"))
     if not skills:

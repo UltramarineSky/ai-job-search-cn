@@ -67,6 +67,12 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      # 套件会真的跑 `tools/lint_skills.py`（它是唯一要第三方库的脚本，
+      # README「要装什么」那张表里也只有这一行）。上面的 lint job 装了它，
+      # **这个 job 原来没装** —— 于是首次公开推送的 CI 红了 7 error + 2 failure，
+      # 而同一份代码在装着 pyyaml 的开发机上全绿。干净 clone 挡得住「文件少了」，
+      # 挡不住「环境多了」。
+      - run: pip install pyyaml
       - run: python -m unittest discover -s tests -t . -v
 
   dependency-review:

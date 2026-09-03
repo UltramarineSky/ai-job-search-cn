@@ -102,6 +102,43 @@ class CIAndDocsAgree(unittest.TestCase):
         self.assertIn("python tools/lint_skills.py", text,
                       "CI 装了包却没跑那个脚本？那这条依赖就没有由头了")
 
+    def test_every_job_that_runs_the_suite_installs_it(self):
+        """**「文件里提过」不等于「要用它的那个 job 装了」。**
+
+        上一条只查整份 ci.yml 里有没有那句话 —— 而 `pip install pyyaml` 当时
+        只在 `lint` job 里，跑测试套件的 `python-tests` job 一个字都没有。
+        套件会真的执行 `tools/lint_skills.py`（`test_cli_contract` 按
+        `tools/*.py` 枚举跑 `--help`、`test_lint_skills` 直接调它），
+        于是首次公开推送的 CI 当场 **7 error + 2 failure**，
+        而同一份代码在装着 pyyaml 的开发机上全绿 ——
+        **干净 clone 挡得住「文件少了」，挡不住「环境多了」。**
+
+        这里按 job 逐个查，不解析 YAML：这条测试讲的正是「pyyaml 是可选的」，
+        它自己就不该需要 pyyaml 才跑得起来。
+        """
+        ci = ROOT / ".github" / "workflows" / "ci.yml"
+        if not ci.is_file():
+            self.skipTest("没有 CI 配置")
+        lines = ci.read_text(encoding="utf-8").splitlines()
+        # job 是 `jobs:` 下缩进 2 空格的键；下一个同级键之前都算它的块。
+        jobs, cur = {}, None
+        for ln in lines:
+            m = ln.startswith("  ") and not ln.startswith("   ") and ln.rstrip().endswith(":")
+            if m and ln.strip().rstrip(":").replace("-", "").replace("_", "").isalnum():
+                cur = ln.strip().rstrip(":")
+                jobs[cur] = []
+            elif cur:
+                jobs[cur].append(ln)
+        self.assertTrue(jobs, "一个 job 都没解析出来 —— 下面那条会空跑")
+        bad = [name for name, body in jobs.items()
+               if "unittest discover" in "\n".join(body)
+               and "pip install pyyaml" not in "\n".join(body)]
+        self.assertEqual(
+            bad, [],
+            f"这些 job 跑了测试套件却没装 pyyaml：{bad}。"
+            "\n套件会真的执行 tools/lint_skills.py，缺它就是 7 error + 2 failure，"
+            "而开发机上装着它、永远看不出来。")
+
 
 if __name__ == "__main__":
     unittest.main()
