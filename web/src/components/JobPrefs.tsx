@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Tooltip } from "antd";
 import type { JobPref } from "../types";
 import { hasServer, postPref } from "../data/excluded";
 import { Cmd } from "./Cmd";
@@ -94,9 +93,7 @@ export function JobPrefs({ prefs, onChanged }: {
               <b>{p.n}</b> 个
             </span>
 
-            <Tooltip title={p.note}>
-              <span className="portal-note">{p.note}</span>
-            </Tooltip>
+            <span className="portal-note">{p.note}</span>
           </div>
         ))}
       </div>

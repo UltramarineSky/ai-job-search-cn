@@ -52,6 +52,7 @@ PT = (ROOT / "web" / "src" / "components"
 API = (ROOT / "web" / "src" / "data" / "excluded.ts").read_text(encoding="utf-8")
 TYPES = (ROOT / "web" / "src" / "types.ts").read_text(encoding="utf-8")
 CSS = (ROOT / "web" / "src" / "theme" / "cockpit.css").read_text(encoding="utf-8")
+APP_TSX = (ROOT / "web" / "src" / "App.tsx").read_text(encoding="utf-8")
 RESUME = (ROOT / "workflows" / "job-resume.md").read_text(encoding="utf-8")
 
 
@@ -415,6 +416,45 @@ class WhereToClickIsDefinedOnce(unittest.TestCase):
 
     def test_the_workflow_points_at_the_single_source(self):
         self.assertIn("WEB_REFRESH", self.WF, "工作流没说正本在哪")
+
+
+class ThePanelTellsWhenAppRefreshIsNeeded(unittest.TestCase):
+    """BOSS 直聘与前程无忧等平台网页端没有刷新按钮，必须在手机 APP 刷新。
+
+    如果不加文本提示，用户会在网页端到处找不存在的刷新按钮，或疑惑为什么 auto 没有自动刷新。
+    面板必须明确给出文本提示。
+    """
+
+    def test_export_carries_web_refresh_flag(self):
+        """portal_rows 导出的渠道数据必须包含 webRefresh 标识。"""
+        import resume_refresh as rr
+        rows = ex.portal_rows("__不存在的用户__", {}, [], [])
+        by_name = {r["name"]: r for r in rows}
+        for name, entry in rr.WEB_REFRESH.items():
+            self.assertIn(name, by_name)
+            self.assertEqual(by_name[name].get("webRefresh"), entry[0])
+
+    def test_boss_and_51job_require_app(self):
+        """BOSS 与前程无忧的 webRefresh 必须为 False，猎聘与智联为 True。"""
+        rows = ex.portal_rows("__不存在的用户__", {}, [], [])
+        by_name = {r["name"]: r for r in rows}
+        self.assertFalse(by_name["BOSS"].get("webRefresh"))
+        self.assertFalse(by_name["前程无忧"].get("webRefresh"))
+        self.assertTrue(by_name["猎聘"].get("webRefresh"))
+        self.assertTrue(by_name["智联"].get("webRefresh"))
+
+    def test_portals_modal_has_app_refresh_text_prompt(self):
+        """招聘网站弹层必须包含手机 APP 刷新的文本提示。"""
+        self.assertIn("手机 APP 刷新提示", PT)
+        self.assertIn("网页端没有简历刷新按钮", PT)
+
+    def test_portal_refresh_button_marks_app_requirement(self):
+        """需要手机 APP 刷新的平台在刷新按钮上必须有明确标注。"""
+        self.assertIn("需手机 APP", PT)
+
+    def test_desk_card_has_app_refresh_chip(self):
+        """总览页招聘网站卡片必须有提示需开 APP 刷新的标记。"""
+        self.assertIn("需开 APP 刷新", APP_TSX)
 
 
 if __name__ == "__main__":

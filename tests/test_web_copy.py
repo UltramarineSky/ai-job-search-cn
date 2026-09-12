@@ -486,9 +486,8 @@ class ReactTextObeysTheWordingRules(unittest.TestCase):
                  # 键盘按键：用户要**实际按下**的东西，跟命令名同一类标识符，
                  # 不是没翻译的行话（「按 Ctrl+C 停掉」——翻译成中文反而没人看懂）。
                  "CTRL",
-                 # 网络地址：和 URL 同类。**用户本人就是这么说的** ——
-                 # 2026-08-26「猎聘 cli 封 ip 了，需要手动更换 ip」。
-                 # 翻成「网络出口地址」反而要他先做一次翻译。
+                 # 手机端应用：用户和 AGENTS.md 都是这么说的（「要开 APP」）。
+                 "APP",
                  "IP"}
         bad = []
         for f in tsx_files():

@@ -833,6 +833,12 @@ export interface Portal {
    * **唯一一件每天都要做**的事，而它此前没有任何落点。
    */
   resumeStale?: number;
+  /** 网页版有没有「刷新简历」按钮（false 表示网页端无入口，需在手机 APP 活跃或刷新） */
+  webRefresh?: boolean;
+  /** 刷新入口说明（来自 resume_refresh.WEB_REFRESH） */
+  refreshHow?: string;
+  /** 怎么算刷新成功 */
+  refreshSuccess?: string;
 }
 
 /**

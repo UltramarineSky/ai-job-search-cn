@@ -1333,12 +1333,17 @@ body {
 
 /* 降权泊车的说明——解释流水线前两格的缺口，别让人当成积压 */
 .parked-note {
-  margin: -6px 0 14px;
-  font-size: 12px;
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  font-size: 12.5px;
   line-height: 1.7;
-  color: var(--faint);
+  color: var(--dim);
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-left: 3px solid var(--edge-strong);
+  border-radius: 2px;
 }
-.parked-note b { color: var(--data); font-variant-numeric: tabular-nums; }
+.parked-note b { color: var(--lit); font-variant-numeric: tabular-nums; }
 
 /* ---------- 全部命令（图形界面里的那份帮助） ---------- */
 .cmdbook-lead,
@@ -1717,6 +1722,39 @@ body {
 }
 .portal-refresh:disabled { cursor: default; opacity: .6; }
 
+/* 需手机 APP 刷新的行内提示小标 */
+.portal-app-badge {
+  font-size: 11px;
+  color: var(--faint);
+  margin-left: 4px;
+}
+.portal-refresh[data-stale="old"] .portal-app-badge {
+  color: var(--caution);
+}
+
+/* 手机 APP 刷新提示条。放在列表之上，明确说明 BOSS 与前程无忧等平台无网页端入口 */
+.portal-app-tip {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 3px;
+  border: 1px solid var(--edge);
+  background: var(--panel-raised, rgba(255, 255, 255, 0.03));
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--dim);
+}
+.portal-app-tip b {
+  color: var(--lit);
+  font-weight: 600;
+}
+.portal-app-icon {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
 /* 撞了平台风控的告警条。**放在列表之上**，不是行内小字：
    这件事多数只有用户本人能解（去过一条短信），而他看到的现象只是「没新岗了」。 */
 .portal-alarm {
@@ -1791,6 +1829,7 @@ body {
 .jobprefs-lead { margin: 0 0 12px; font-size: 13px; line-height: 1.75; color: var(--faint); }
 .jobprefs-lead b { color: var(--lit); }
 .jobpref-row { grid-template-columns: 18em 6em 1fr; }
+.jobpref-row .portal-note { white-space: normal; overflow: visible; }
 
 /* 列表搜索条 */
 .sl-search {
@@ -1897,10 +1936,14 @@ body {
 }
 .deskbtn {
   display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
-  flex: 1 1 260px; max-width: 100%; text-align: left; cursor: pointer;
+  flex: 1 1 calc(33.333% - 10px); min-width: 280px; max-width: 100%; text-align: left; cursor: pointer;
   padding: 10px 14px; font: inherit; font-size: 13.5px; line-height: 1.5;
   color: var(--dim); background: var(--panel); border: 1px solid var(--edge);
   border-radius: 2px;
+}
+.deskbtn[data-desk="cmds"] {
+  flex-basis: 100%;
+  border-left: 3px solid var(--data);
 }
 .deskbtn:hover { border-color: var(--data); background: var(--panel-raised); }
 .deskbtn:focus-visible { outline: 2px solid var(--data); outline-offset: 2px; }
@@ -1919,6 +1962,28 @@ body {
 .deskbtn-alarm[data-tone="off"] { color: var(--faint); font-weight: 400; }
 .deskbtn-chip { margin-left: auto; color: var(--caution); }
 
+/* 弹窗限制最大高度并内部滚动，防止长内容溢出屏幕 */
+.desk-modal {
+  top: 32px;
+  padding-bottom: 32px;
+}
+.desk-modal .ant-modal-container,
+.desk-modal .ant-modal-content {
+  max-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+}
+.desk-modal .ant-modal-header {
+  flex-shrink: 0;
+  margin-bottom: 14px;
+}
+.desk-modal .ant-modal-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--edge-strong) transparent;
+}
 /* 弹窗里那几块自带间距，不要再挂外边距。 */
 .desk-modal .panel-collapse { margin-bottom: 0 !important; }
 

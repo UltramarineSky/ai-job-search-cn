@@ -726,6 +726,13 @@ export default function App() {
                  })
                  .join(" · ") }]
           : []),
+        // 手机 APP 刷新提示：网页端无法刷新的平台（如 BOSS、前程无忧）今天还没刷
+        ...(portals.some((p) => p.enabled && p.webRefresh === false && p.resumeStale !== 0)
+          ? [{ tone: (portals.some((p) => p.enabled && p.webRefresh === false && (p.resumeStale ?? 0) >= (snap?.resumeStaleDays ?? 14))
+                       ? "alarm" as const : "off" as const),
+               text: portals.filter((p) => p.enabled && p.webRefresh === false && p.resumeStale !== 0)
+                            .map((p) => p.name).join("、") + " 需开 APP 刷新" }]
+          : []),
       ],
     },
     {

@@ -135,3 +135,6 @@ docs/superpowers/
 .agents/skills/job-application-assistant/
 .agents/skills/job-scrape/
 .agents/skills/job-upskill/
+.workbuddy/
+promot*
+

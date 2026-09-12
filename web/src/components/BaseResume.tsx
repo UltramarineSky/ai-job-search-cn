@@ -101,7 +101,7 @@ export function BaseResume(
           给出原句而不只给词：一个词在两千字里搜不着，一句话找得到。 */}
       {(data.styleWarn?.length ?? 0) > 0 && (
         <p className="bresume-stale">
-          {`正文里有 ${data.styleWarn!.length} 句 03 说要改写的写法：`}
+          {`正文里有 ${data.styleWarn!.length} 处写作规范建议改写的写法：`}
           {data.styleWarn!.map((w) => (
             <span className="bresume-elsewhere" key={w}>{w}</span>
           ))}

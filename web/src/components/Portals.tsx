@@ -254,6 +254,18 @@ export function Portals({ portals, onChanged, staleDays }: {
         </span>
       </div>
 
+      {/* 手机 APP 刷新提示：明确说明哪些平台网页端没有刷新按钮 */}
+      {portals.some((p) => shownOn(p) && p.webRefresh === false) && (
+        <div className="portal-app-tip" role="note">
+          <span className="portal-app-icon">📱</span>
+          <span className="portal-app-text">
+            <b>手机 APP 刷新提示：</b>
+            {portals.filter((p) => shownOn(p) && p.webRefresh === false).map((p) => p.name).join("、")}
+            {" 网页端没有简历刷新按钮（排序看移动端在线活跃与打招呼，或仅在手机端开放刷新）。请打开手机 APP 活跃或刷新简历，完成后在下方点击按钮记上一笔。"}
+          </span>
+        </div>
+      )}
+
       {blocked.length > 0 && (
         <div className="portal-alarm" role="alert">
           {/* **标题也要说在通道上。** `blocked` 现在是一条通道一项，而这句话
@@ -496,10 +508,16 @@ export function Portals({ portals, onChanged, staleDays }: {
               <Tooltip
                 title={
                   shownStale(p) === undefined
-                    ? "还没记过。国内平台的简历库基本按「最近活跃」排序，HR 主动搜人翻不了几页——登进去刷一下，回来点这里记一笔"
+                    ? (p.webRefresh === false
+                        ? `${p.name} 网页端没有刷新按钮，排序看在线活跃与打招呼。请在手机 APP 里活跃或刷新简历，操作后点这里记一笔`
+                        : "还没记过。国内平台的简历库基本按「最近活跃」排序，HR 主动搜人翻不了几页——登进去刷一下，回来点这里记一笔")
                     : shownStale(p) === 0
-                      ? "今天刷过了。再点一下撤销"
-                      : `${shownStale(p)} 天前刷的。超过 ${stale} 天没登录的简历，HR 就翻不到了`
+                      ? (p.webRefresh === false
+                          ? `${p.name} 今天已在手机 APP 刷过/活跃。再点一下撤销`
+                          : "今天刷过了。再点一下撤销")
+                      : (p.webRefresh === false
+                          ? `${shownStale(p)} 天前刷的。超过 ${stale} 天没登录的简历，HR 就翻不到了。${p.name} 需在手机 APP 活跃或刷新简历，操作后点此记上`
+                          : `${shownStale(p)} 天前刷的。超过 ${stale} 天没登录的简历，HR 就翻不到了`)
                 }
               >
                 <button
@@ -518,6 +536,9 @@ export function Portals({ portals, onChanged, staleDays }: {
                     : shownStale(p) === 0
                       ? "简历今天刷过"
                       : `简历 ${shownStale(p)} 天没刷`}
+                  {p.webRefresh === false && (
+                    <span className="portal-app-badge">（需手机 APP）</span>
+                  )}
                 </button>
               </Tooltip>
             )}

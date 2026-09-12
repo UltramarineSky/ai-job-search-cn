@@ -970,9 +970,11 @@ def portal_rows(user: str, seen: dict, jobs: list, qlog: list) -> list:
             last[p], fresh[p] = d, 0
         if d == last[p]:
             fresh[p] += int(e.get("new") or 0)
+    import resume_refresh as rr
     _stale = resume_stale_days(user)
     out = []
     for name, f in PORTAL_FACTS.items():
+        _rf = rr.WEB_REFRESH.get(name)
         out.append({
             "name": name, "enabled": on.get(name, True),
             "how": f["how"], "needsLogin": f["needsLogin"], "jd": f["jd"],
@@ -983,6 +985,10 @@ def portal_rows(user: str, seen: dict, jobs: list, qlog: list) -> list:
             "everSellable": by[name]["everSellable"],
             "withJd": by[name]["withJd"],
             "lastRun": last.get(name) or None, "newLastRun": fresh.get(name, 0),
+            # 网页版能不能刷新、入口与判断依据（正本在 `resume_refresh.WEB_REFRESH`）
+            "webRefresh": _rf[0] if _rf else False,
+            "refreshHow": _rf[1] if _rf else "",
+            "refreshSuccess": _rf[2] if _rf else "",
             # 在线简历上次刷新是几天前。**没记过就不给这个字段** ——
             # 给个 null 会被渲染成「0 天」或「很久」，两个都是编的。
             **({"resumeStale": _stale[name]} if name in _stale else {}),
