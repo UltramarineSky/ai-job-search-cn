@@ -18,7 +18,7 @@
 
 **一个 AI 编码工具 + Node 22.18+，就能开始。** 不用装别的——搜职位的 CLI 直接跑在 Node 上（零依赖、无编译步骤）。你的 AI 工具要是 `npm install -g` 装的（Claude Code、Codex CLI、Gemini CLI 都是），Node 就已经在了。
 
-> 本文示例按 **Claude Code** 写——它是唯一开箱就有 `/job-setup`、`/job-apply` 这些斜杠命令的。换别的工具功能不变，见下面「[不用 Claude Code 也行](#不用-claude-code-也行)」。
+> 本文命令示例按 **Claude Code** 的斜杠形式（如 `/job-auto`）书写。在 Antigravity CLI (agy)、Gemini CLI、Cursor、Codex 等其它 AI 工具中，**去掉开头的斜杠输入**（如 `job-auto`）或**直接说人话**（如「自动跑一轮」）即可触发完全相同的工作流，详见「[不用 Claude Code 也行](#不用-claude-code-也行)」。
 
 **所以第一次用是零额外依赖的**：一个 AI 编码工具加 Node，`/job-setup` → `/job-auto` 就能拿到真实的排序名单和投递材料。
 
@@ -206,9 +206,17 @@ node .agents/skills/liepin-search/cli/src/cli.ts detail "<职位URL>" --format p
 
 ## 不用 Claude Code 也行
 
-本仓库不绑定单一 AI 工具。任何 agent（Claude Code、Codex CLI、Gemini CLI、Cursor 等）从根目录 [`AGENTS.md`](AGENTS.md) 进入：那里有角色定义、多用户路径解析、安全铁律、全部工作流的索引，以及「能力 → 各工具」对照表。
+本仓库不绑定单一 AI 工具。任何 agent（Claude Code、Antigravity CLI、Codex CLI、Gemini CLI、Cursor 等）从根目录 [`AGENTS.md`](AGENTS.md) 进入：那里有角色定义、多用户路径解析、安全铁律、全部工作流的索引，以及「能力 → 各工具」对照表。
 
-换工具后功能不变，只是有些能力（比如驱动浏览器）各家实现不同，届时会退到能用的那条路并告诉你。Claude Code 用户额外获得 `/job-apply` 这类 slash 命令。
+换工具后功能不变，只是有些能力（比如驱动浏览器）各家实现不同，届时会退到能用的那条路并告诉你。
+
+### 在不同 AI 工具中怎么执行命令（避免 Unknown command）
+
+- **在 Claude Code 中**：支持带斜杠的快捷命令（如 `/job-auto`、`/job-rank`、`/job-apply <职位链接>`），输入时支持 Tab 自动补全。
+- **在 Antigravity CLI (agy)、Gemini CLI、Cursor、Codex 等终端工具中**：
+  - **去掉开头的斜杠输入**：直接输入 `job-auto`、`job-rank`、`job-apply <职位链接>` 即可。
+    > **为什么不要带斜杠？** 许多终端命令行客户端（如 agy）将开头的 `/` 默认为客户端自身内置命令（如 `/help`、`/clear`、`/config` 等）。直接输入 `/job-auto` 会被终端客户端直接拦截并提示 `Unknown command: /job-auto`。去掉前面的斜杠即可顺利交由底层 AI Agent 识别并执行。
+  - **直接用自然语言（推荐）**：说求职者的人话即可，例如「自动跑一轮」、「帮我给手上的岗位打分」、「投这个岗 <链接>」、「刷一下在线简历」。本仓库在 `.agents/skills/` 下配置了完整的 Agent 技能与触发词，AI 会自动识别意图并执行完全相同的工作流。
 
 **那 `.claude/` 是干什么的？** 它是 Claude Code 的接入件，不是本仓库的一部分逻辑：`.claude/commands/` 是 Claude Code 找 slash 命令的**固定路径**（18 个 stub，每个 2 行，只写「读取并严格执行 `workflows/<名>.md`」）；`.claude/skills/` 是它找自动触发技能的固定路径（3 份壳，只有触发词和工具权限）；`.claude/settings.json`是它的权限预批清单。三者加上 `CLAUDE.md` 一共约 150 行，**没有一行正文**——正文全部在 `workflows/`，谁都读得到。
 

@@ -987,9 +987,14 @@ class EveryCopyButtonSaysWhatItCopies(unittest.TestCase):
     def test_the_name_carries_the_thing_being_copied(self):
         """光收进一个组件不够，那个组件得真把内容拼进名字里。"""
         src = self.HOME.read_text(encoding="utf-8")
+        # 名字里必须是**实际复制到剪贴板**的那条（formatted），不是正本 children：
+        # 免斜杠模式下显示/复制的都是 job-auto，提示写 /job-auto 就是骗读屏。
         self.assertRegex(
-            src, r"tooltips:\s*\[\s*`复制 \$\{children\}`",
-            "Cmd 没把命令拼进 tooltips[0] —— antd 拿它当 aria-label，"
+            src, r"const formatted = formatCommand\(children\)",
+            "Cmd 没先按宿主工具把命令适配成 formatted")
+        self.assertRegex(
+            src, r"tooltips:\s*\[\s*`复制 \$\{formatted\}`",
+            "Cmd 没把实际复制的命令拼进 tooltips[0] —— antd 拿它当 aria-label，"
             "不拼就还是二十三个「复制」")
         self.assertRegex(
             src, r"tooltips:\s*\[\s*`复制\$\{what\}`",

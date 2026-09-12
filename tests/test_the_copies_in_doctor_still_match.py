@@ -62,6 +62,7 @@ ENTRY_POINTS = {"main", "run"}
 JUDGED = {
     "is_out_verdict": "test_is_out_verdict_agrees",
     "norm_url": "test_norm_url_agrees",
+    "detect_code_tool": "test_detect_code_tool_agrees_between_doctor_and_cli",
 }
 
 #: 同名不同义 —— 各写各的是对的，值是理由。

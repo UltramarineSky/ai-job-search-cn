@@ -174,7 +174,20 @@ python tools/doctor.py
 建议先去翻文档。
 
 - 面板上用命令块（`<Cmd>`），一眼看得出那是要敲的东西，还能点着复制。
-- 终端与文件里原样写 `/job-rank --all` 这种完整形态，包括参数。
+- 终端与文件里原样写 `/job-rank --all` 这种完整形态，包括参数。**文档正本
+  （本文件与 `workflows/`）里的命令一律保留开头的斜杠**——那是标准形式；
+  按工具改写只发生在给用户看的最终渲染层（见下一条）。
+- **根据当前所处的 AI 工具调整命令形式**：Claude Code 里给带斜杠的形式
+  （如 `/job-auto`，支持 Tab 补全）；Antigravity CLI (agy)、Gemini CLI、
+  Codex CLI 等终端助手，以及 Cursor 这类编辑器内置助手里，给**去掉开头斜杠的
+  形式**（如 `job-auto`——斜杠会被客户端当成内置指令拦掉），或直接给自然语言
+  说法（如「自动跑一轮」）。探测是自动的：`tools/_cli.py` 的 `detect_code_tool`
+  负责判定，`doctor.py` 输出与面板 `<Cmd>` 命令块都会跟着适配；识别错了可用
+  环境变量 `JOBS_CODE_TOOL=claude|antigravity|gemini|generic` 手工指定。
+  ⚠️ 探测信号只许用实测过的（Claude Code 是 `CLAUDECODE=1`、agy 是
+  `ANTIGRAVITY_AGENT=1`、Gemini CLI 是 `GEMINI_CLI=1`），别写「看着像」的
+  变量名——上一版的 `CLAUDE_CODE`、`CURSOR_VERSION`、`CODEX` 在对应工具里
+  根本不存在，真 Claude Code 会话被认成了 generic（2026-09-12 实测）。
 - 一条引导对应**一条**命令。给两条以上，用户就要先做一次选择——那正是引导要替他
   省掉的那一步。真有分支就写清「哪种情况敲哪条」。
 - **「等」不是下一步。** 倒计时、「过一阵再试」、「明天再来」都不是他能动手做的事，

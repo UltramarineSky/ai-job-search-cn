@@ -1,5 +1,7 @@
+import { Radio } from "antd";
 import { Cmd } from "./Cmd";
 import type { CommandGroup, CommandItem } from "../types";
+import { useCodeTool } from "../context/CodeToolContext";
 
 /**
  * 全部命令——图形界面里的那份「帮助」
@@ -70,8 +72,37 @@ function Examples({ it }: { it: CommandItem }) {
 export function CommandBook(
   { groups, spineOnly = false }: { groups: CommandGroup[]; spineOnly?: boolean },
 ) {
+  const { tool, setTool } = useCodeTool();
+
   return (
     <div className="cmdbook">
+      <div
+        style={{
+          marginBottom: 14,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          flexWrap: "wrap",
+        }}
+      >
+        <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+          {"终端工具适配："}
+        </span>
+        <Radio.Group
+          size="small"
+          value={tool === "claude" ? "slash" : "no_slash"}
+          onChange={(e) => setTool(e.target.value === "slash" ? "claude" : "generic")}
+          buttonStyle="solid"
+        >
+          <Radio.Button value="no_slash">{"免斜杠模式"}</Radio.Button>
+          <Radio.Button value="slash">{"斜杠模式"}</Radio.Button>
+        </Radio.Group>
+        <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+          {tool !== "claude"
+            ? "已开启免斜杠优化：复制时不带前置斜杠，直接粘贴即可运行，避免终端内置指令拦截"
+            : "已开启斜杠模式：保留前置斜杠，支持客户端快捷指令与自动补全"}
+        </span>
+      </div>
       {/* 这里原来是两段开场白，第一段还是**假的**：「这一页只负责让你看得见。真正
           干活的命令都在命令行里敲」——「我投了 / 约面了 / 不投」点这一页就落盘了。
           上面那个折叠标题早就按模式分了真假话（`App.tsx` 有整段注释讲这事），

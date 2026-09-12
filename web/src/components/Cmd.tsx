@@ -1,4 +1,5 @@
 import { Typography } from "antd";
+import { useCodeTool } from "../context/CodeToolContext";
 
 /**
  * 可复制的命令片 / 复制按钮。
@@ -16,11 +17,22 @@ import { Typography } from "antd";
  * 原来在 8 个文件里抄了 19 遍。改一次提示语要改 19 处，漏一处就不一致。
  */
 
-/** 命令片：等宽方框 + 复制。`children` 就是要敲的那条命令。 */
+/** 命令片：等宽方框 + 复制。`children` 就是要敲的那条命令，支持随当前终端工具自适应格式。 */
 export function Cmd({ children }: { children: string }) {
+  const { formatCommand } = useCodeTool();
+  const formatted = formatCommand(children);
+
   return (
-    <Typography.Text code copyable={{ tooltips: [`复制 ${children}`, "已复制"] }}>
-      {children}
+    <Typography.Text
+      code
+      copyable={{
+        text: formatted,
+        // 提示要说**实际复制到剪贴板**的那条；免斜杠模式下显示和复制的
+        // 都是 job-auto，提示却还写 /job-auto 就是骗用户。
+        tooltips: [`复制 ${formatted}`, "已复制"],
+      }}
+    >
+      {formatted}
     </Typography.Text>
   );
 }

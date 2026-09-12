@@ -33,6 +33,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -2553,3 +2554,40 @@ def norm_url(u: str) -> str:
     s = re.sub(r"^//(?:m|wap)\.(?!51job\.)", "//www.", s)
     m = re.match(r"(//jobs\.51job\.com)/[^/]+/(\d+)\.html", s)
     return f"{m.group(1)}/{m.group(2)}.html" if m else s
+
+
+def detect_code_tool() -> str:
+    """自动探测当前跑在哪个 AI 编码工具里。
+
+    返回值：
+    - "antigravity": Antigravity CLI (agy)
+    - "claude": Claude Code
+    - "gemini": Gemini CLI
+    - "generic": 其它终端 / 普通命令行 / 认不出来的助手
+
+    信号全部经过实测取证（2026-09-12，对本机真实安装逐个核对），**不要加
+    「看着像」的变量名**——上一版写的 `CLAUDE_CODE`、`CLAUDE`、`CURSOR_VERSION`、
+    `CODEX` 在对应工具里根本不存在，结果是真 Claude Code 会话被认成 generic。
+    - Claude Code 给所有子进程注入 `CLAUDECODE=1`（另有 CLAUDE_CODE_ENTRYPOINT）。
+    - agy.exe 里有字面量 `ANTIGRAVITY_AGENT=1`。
+    - Gemini CLI 的 ShellExecutionService 给它起的每个子 shell 注入 `GEMINI_CLI=1`。
+    - Cursor 没有可识别的标记（集成终端里 TERM_PROGRAM 是 "vscode" 不是 "cursor"）；
+      Codex CLI 也没有。两者行为与 generic 相同（都走免斜杠），不必分档。
+      识别错了可用环境变量 JOBS_CODE_TOOL 手工覆盖（doctor 的工具名提示仍认它）。
+
+    doctor.py 因「只用标准库、不 import 仓库模块」的契约保有一份逐字副本，
+    两份判得一样由 tests/test_code_tool_detection.py 钉住。
+    """
+    override = os.environ.get("JOBS_CODE_TOOL")
+    if override:
+        return override.strip().lower()
+    if (os.environ.get("ANTIGRAVITY_AGENT")
+            or os.environ.get("ANTIGRAVITY_AGENTAPI_EXE")
+            or os.environ.get("ANTIGRAVITY_LS_VERSION")):
+        return "antigravity"
+    if os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_ENTRYPOINT"):
+        return "claude"
+    if os.environ.get("GEMINI_CLI"):
+        return "gemini"
+    return "generic"
+

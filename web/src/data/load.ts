@@ -48,6 +48,8 @@ export interface Snapshot {
   /** 「挂了」时可以点的原因，来自 `tracker.REASONS`，前端不写死。 */
   outcomeReasons?: { value: string; label: string }[];
   nextStep: NextStep;
+  /** 自动探测到的宿主 AI 编码工具，正本见 _cli.detect_code_tool：antigravity / claude / gemini / generic（或 JOBS_CODE_TOOL 覆盖值） */
+  detectedTool?: string;
   /** 市场怎么读这份简历。评估不足时导出器不给这个字段，面板整块不显示。 */
   resumeInsight?: ResumeInsight;
   /**
@@ -148,6 +150,7 @@ function normalize(d: Partial<Snapshot>): Snapshot {
     prefs: d.prefs,
     archivedCount: d.archivedCount,
     restaleCount: d.restaleCount,
+    detectedTool: d.detectedTool,
     nextStep: d.nextStep ?? { text: "从下面的名单里挑一个岗，点开看详情", command: "" },
   };
 }

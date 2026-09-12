@@ -187,6 +187,32 @@ class StaleCodeGetsCalledOut(unittest.TestCase):
         self.assertIn("python tools/serve.py", app,
                       "提醒里没写出该敲的命令（面板通例：每处引导都写出命令）")
 
+    def test_detected_tool_rides_the_snapshot_per_response(self):
+        """盘上 data.json 的 detectedTool 是**导出那一刻**的环境，可能来自别的工具。
+
+        实测 2026-09-12：Claude Code 起的面板，端的是早先 Antigravity 会话导出的
+        快照（快照只在数据上游变化时重导，环境换了不重导），整页命令默认免斜杠。
+        with_detected_tool 在响应时按起服务的环境盖写，不落盘。
+        """
+        raw = json.dumps({"jobs": [], "detectedTool": "antigravity"},
+                         ensure_ascii=False).encode("utf-8")
+        out = json.loads(serve.with_detected_tool(raw, "claude").decode("utf-8"))
+        self.assertEqual(out["detectedTool"], "claude")
+        self.assertEqual(out["jobs"], [], "原有字段不能被弄丢")
+        broken = b"{not json"
+        self.assertEqual(serve.with_detected_tool(broken, "claude"), broken,
+                         "坏 JSON 要原样端出——盖一个字段不值得把整页搞挂")
+
+    def test_the_data_route_applies_the_override(self):
+        """盖写必须挂在 /data.json 的出口，两个响应分支都算。"""
+        src = (ROOT / "tools" / "serve.py").read_text(encoding="utf-8")
+        i = src.index('if path == "/data.json"')
+        seg = src[i:i + 2200]
+        self.assertIn("with_detected_tool", seg,
+                      "/data.json 出口没盖写 detectedTool，换工具起服务会端旧值")
+        self.assertIn("_cli.detect_code_tool()", seg,
+                      "盖写值得按当前环境现探，不能写死")
+
 
 class TheReasonIsWrittenDown(unittest.TestCase):
     """为什么不能图快改回同进程——理由要留在代码里，不然下一个人会「优化」掉它。"""

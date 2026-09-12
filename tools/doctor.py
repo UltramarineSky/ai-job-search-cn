@@ -1812,6 +1812,75 @@ def next_step(env: dict, st: dict) -> list[str]:
     return ["手上没有备好的材料了。下一步：跑 /job-auto 接着抓 —— "
             "抓岗、评分、出材料一条龙，中途不用盯着。"]
 
+def detect_code_tool() -> str:
+    """探测当前跑在哪个 AI 编码工具里。
+
+    正本是 `_cli.detect_code_tool`。本文件顶上的契约不许 import 仓库模块，
+    这里保一份**逐字副本**；两份判得一样由
+    `tests/test_code_tool_detection.py` 钉死，改一处必须改另一处。
+    信号怎么来的（全是实测、不许写「看着像」的变量名）见正本 docstring。
+    """
+    override = os.environ.get("JOBS_CODE_TOOL")
+    if override:
+        return override.strip().lower()
+    if (os.environ.get("ANTIGRAVITY_AGENT")
+            or os.environ.get("ANTIGRAVITY_AGENTAPI_EXE")
+            or os.environ.get("ANTIGRAVITY_LS_VERSION")):
+        return "antigravity"
+    if os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_ENTRYPOINT"):
+        return "claude"
+    if os.environ.get("GEMINI_CLI"):
+        return "gemini"
+    return "generic"
+
+
+#: JOBS_CODE_TOOL 手工指定为这些名字时，脚注能叫出工具名（自动探测分不出它们）。
+_TOOL_LABELS = {
+    "antigravity": "Antigravity（agy）",
+    "cursor": "Cursor",
+    "gemini": "Gemini CLI",
+    "codex": "Codex CLI",
+}
+
+#: 给用户敲的斜杠命令。前面贴着单词 / 点 / 斜杠 / 连字符的不动——
+#: 那是路径（workflows/job-apply.md）或 URL 里的片段，不是命令。
+_SLASH_CMD = re.compile(r"(?<![\w./-])/(job-[a-z][a-z-]*)")
+
+
+def adapt_commands(text, tool: str) -> str:
+    """非 Claude Code 环境下，把文本里的 `/job-xxx` 改成 `job-xxx`。
+
+    Claude Code 保留斜杠（Tab 补全）；其它助手不带斜杠直接发，斜杠会被
+    客户端当内置指令拦掉。文档正本保留斜杠，这里只改「印给用户看」的这一层。
+    """
+    if tool == "claude" or not isinstance(text, str):
+        return text
+    return _SLASH_CMD.sub(r"\1", text)
+
+
+class _CommandStream:
+    """包一层 stdout，让整份 doctor 输出统一按工具适配。
+
+    全文有 48 个 print 调用点、70 处命令字符串，逐处改必漏；适配逻辑只有
+    一处，就该只有一个落点。除 write/writelines 外的属性全部委托原流。
+    """
+
+    def __init__(self, raw, tool: str):
+        self.raw = raw
+        self.tool = tool
+
+    def write(self, s):
+        return self.raw.write(adapt_commands(s, self.tool))
+
+    def writelines(self, lines):
+        self.raw.writelines(adapt_commands(s, self.tool) for s in lines)
+
+    def flush(self):
+        self.raw.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.raw, name)
+
 
 def main(argv=None) -> int:
     # argparse 是标准库，不违反本文件顶上第 1 条约束（不 import 本仓库的模块）。
@@ -1827,6 +1896,19 @@ def main(argv=None) -> int:
     # 自己的命令行，当场 `SystemExit(2)`。真正的入口在下面显式传 sys.argv[1:]。
     args = ap.parse_args([] if argv is None else argv)
 
+    # 在任何输出之前定工具、包 stdout：自检的每一段（环境、建档引导、下一步）
+    # 都可能出现命令，包裹必须覆盖全程。
+    tool = detect_code_tool()
+    raw_stdout = sys.stdout
+    if tool != "claude":
+        sys.stdout = _CommandStream(raw_stdout, tool)
+    try:
+        return _main_body(args, tool, raw_stdout)
+    finally:
+        sys.stdout = raw_stdout
+
+
+def _main_body(args, tool: str, raw_stdout) -> int:
     print()
     print("=" * 66)
     print("  AI 求职助手 —— 环境与进度自检")
@@ -1842,6 +1924,23 @@ def main(argv=None) -> int:
     hr("下一步做什么")
     for line in next_step(env, st):
         print(line)
+
+    # 斜杠在非 Claude Code 客户端会被当内置指令拦掉，上面的命令已经按工具
+    # 去斜杠了，这里只说一句「直接粘」，不让用户自己做字符串翻译。
+    if tool != "claude":
+        print()
+        label = _TOOL_LABELS.get(tool)
+        if label:
+            print(f"💡 已识别为 {label}：上面的命令都省掉了开头的斜杠，"
+                  "直接粘进助手对话框即可；也可以直接说大白话，比如「自动跑一轮」。")
+        else:
+            # generic 脚注要示范 Claude Code 的带斜杠写法，不能再走剥离流，
+            # 否则示例里的 /job-auto 会被自己剥掉。
+            raw_stdout.write(
+                "💡 这些命令在 AI 助手的对话框里输入：用 Claude Code 时带斜杠"
+                "（如 /job-auto，还能补全）；其它助手直接粘上面不带斜杠的写法，"
+                "或直接说大白话（如「自动跑一轮」）。\n")
+
     print()
     print("完整说明：README.md（快速开始） · 安装细节：SETUP.md · 全部命令：AGENTS.md")
     print()

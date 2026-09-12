@@ -7,6 +7,7 @@ import { Shortlist, ShelvedList, plainVerdict } from "./components/Shortlist";
 import { ResumeRead } from "./components/ResumeRead";
 import { BaseResume } from "./components/BaseResume";
 import { CommandBook } from "./components/CommandBook";
+import { CodeToolProvider } from "./context/CodeToolContext";
 import { OutcomeStatsPanel, sayRate } from "./components/OutcomeStats";
 import { HidePrefs } from "./components/HidePrefs";
 import { HrAnswers } from "./components/HrAnswers";
@@ -826,7 +827,8 @@ export default function App() {
   return (
     <ConfigProvider theme={cockpitTheme} locale={zhCN} button={cockpitComponents.button}>
       <AntApp>
-        <div className="cockpit">
+        <CodeToolProvider initialTool={snap.detectedTool}>
+          <div className="cockpit">
           <header className="mast">
             <span className="mast-word">求职总览</span>
             <span className="kicker">全在你自己电脑上跑，数据不上传</span>
@@ -1683,6 +1685,7 @@ export default function App() {
             )}
           </p>
         </div>
+        </CodeToolProvider>
       </AntApp>
     </ConfigProvider>
   );

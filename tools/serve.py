@@ -531,6 +531,24 @@ def warn_if_code_changed() -> list:
     return changed
 
 
+def with_detected_tool(raw: bytes, tool: str) -> bytes:
+    """把 detectedTool 盖成**起这个服务的环境**探测到的工具。
+
+    导出器在导出那一刻把 detectedTool 烤进 data.json，而 data.json 只在
+    「上游数据变了」时才重导——换个 AI 工具起服务、或并行会话（另一个工具
+    先导出过一份）都不会让它失效。实测 2026-09-12：Claude Code 会话起的面板，
+    端的是早先 Antigravity 会话导出的快照，整页命令默认免斜杠。
+    与 with_stale_flag 同款：只改这一次响应，不动盘上的 data.json。
+    纯函数，解析失败原样端出去。
+    """
+    try:
+        d = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return raw
+    d["detectedTool"] = tool
+    return json.dumps(d, ensure_ascii=False).encode("utf-8")
+
+
 def with_stale_flag(raw: bytes, changed: list) -> bytes:
     """把「代码比进程新」的文件名单塞进这一次的快照响应。
 
@@ -801,9 +819,13 @@ class Handler(BaseHTTPRequestHandler):
             # nohup 一包就没人看见——实测这一天三次全靠事后翻日志才发现。
             # 只改这一次响应，不动盘上的 data.json（那是导出器的产物）。
             stale = warn_if_code_changed()
-            if stale and f.is_file():
-                return self._send(200, with_stale_flag(f.read_bytes(), stale),
-                                  "application/json; charset=utf-8")
+            if f.is_file():
+                # detectedTool 同理要按**当前起服务的环境**盖写：盘上那份可能是
+                # 别的工具 / 并行会话早先导出的（见 with_detected_tool 的说明）。
+                raw = with_detected_tool(f.read_bytes(), _cli.detect_code_tool())
+                if stale:
+                    raw = with_stale_flag(raw, stale)
+                return self._send(200, raw, "application/json; charset=utf-8")
             return self._serve_file(f)
         if path.startswith("/pdf/"):
             # PDF 与 data.json 同理，从 web/public 取——导出器每次把最新 PDF 写到

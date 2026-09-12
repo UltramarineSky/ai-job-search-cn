@@ -4632,6 +4632,7 @@ def main(argv=None, *, show_next_step=True) -> int:
         # 面板不说出命令，用户就只能靠翻文档才知道自己还能做什么。
         # 从 AGENTS.md 的索引解析，不在前端写死（写死必然跟索引飘）。
         "commands": parse_commands(),
+        "detectedTool": _cli.detect_code_tool(),
         # 这个 clone 下有哪些用户。面板原来只知道「当前是谁」，于是那个
         # 「换个用户」按钮既列不出可选项、也说不出怎么新建——它就是个死按钮。
         # 多人共用一份 clone 是 AGENTS.md 明确支持的用法，界面得让人看得见。
