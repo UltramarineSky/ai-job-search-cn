@@ -30,6 +30,7 @@
 面板那份仍然只列建过档的，那是**另一件事**：弹层里每一行都配一条
 `/job-user <名>` 让人点着切过去，切到空壳是死胡同。理由记在导出那里。
 """
+import os
 import pathlib
 import re
 import subprocess
@@ -163,9 +164,14 @@ class DoctorKeepsAnHonestCopy(unittest.TestCase):
         shells = [n for n, ok in _cli.all_users() if not ok]
         if not shells:
             self.skipTest("这份 clone 下没有没建档的目录")
+        # 钉死标准形式（带斜杠）：doctor 在非 Claude Code 会话里会把命令去斜杠，
+        # 下面断言的是文档正本的 `/job-user --remove`；去斜杠归
+        # test_code_tool_detection 覆盖。
+        env = dict(os.environ, JOBS_CODE_TOOL="claude")
         out = subprocess.run([sys.executable, str(ROOT / "tools" / "doctor.py")],
                              cwd=ROOT, capture_output=True, text=True,
-                             encoding="utf-8", errors="replace").stdout
+                             encoding="utf-8", errors="replace",
+                             env=env).stdout
         for n in shells:
             self.assertIn("「" + n + "」", out, f"doctor 没说「{n}」还没建档")
         self.assertIn("/job-user --remove", out)

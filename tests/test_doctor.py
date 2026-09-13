@@ -31,9 +31,17 @@ def _run_in(root: Path):
     # cp936，doctor 的中文提示到 Git Bash / VS Code 终端里就是一屏乱码。
     # 同期 test_cli_contract 没设、照实撞见乱码而变红，那条红的才是诚实的。
     # 现在 doctor.py 自己把非 tty 的输出定到 UTF-8，不再需要外部环境变量兜。
+    #
+    # 但 JOBS_CODE_TOOL 要钉死：这些断言钉的是文档正本的标准形式（带斜杠）。
+    # doctor 会按宿主工具去斜杠，子进程默认继承本会话的探测信号——Claude Code
+    # 会话里有 CLAUDECODE=1 就带斜杠、CI 与普通终端是 generic 就不带，同一套测试
+    # 两处判得不一样（2026-09-12 CI 红了 6 条）。去斜杠那一层由
+    # test_code_tool_detection 整条覆盖，这里只管引导内容对不对。
+    env = dict(os.environ)
+    env["JOBS_CODE_TOOL"] = "claude"
     res = subprocess.run([sys.executable, str(root / "tools" / "doctor.py")],
                          cwd=str(root), capture_output=True, text=True,
-                         encoding="utf-8", errors="strict", timeout=180)
+                         encoding="utf-8", errors="strict", timeout=180, env=env)
     return res.returncode, (res.stdout or "") + (res.stderr or "")
 
 

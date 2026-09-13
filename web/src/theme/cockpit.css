@@ -1722,9 +1722,11 @@ body {
 }
 .portal-refresh:disabled { cursor: default; opacity: .6; }
 
-/* 需手机 APP 刷新的行内提示小标 */
+/* 需手机 APP 刷新的行内提示小标。
+   字号不许低于 12px —— 里面是「（需手机 APP）」一串中文，11px 在深底上读不清
+   （test_cjk_never_goes_below_the_floor 钉着）；层级靠 --faint 颜色区分，不靠缩字号。 */
 .portal-app-badge {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--faint);
   margin-left: 4px;
 }

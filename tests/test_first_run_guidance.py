@@ -23,6 +23,7 @@
 """
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -32,6 +33,17 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def _canonical_env() -> dict:
+    """钉死标准命令形式（带斜杠）的子进程环境。
+
+    doctor 按宿主工具把 `/job-xxx` 去斜杠，而子进程继承本会话的探测信号：
+    Claude Code 会话里带斜杠、CI / 普通终端不带。这些断言钉的是文档正本的
+    标准形式，渲染层去斜杠另有 test_code_tool_detection 整条覆盖
+    （2026-09-12 这套在 CI 里红过两条）。
+    """
+    return dict(os.environ, JOBS_CODE_TOOL="claude")
 
 
 def _filled_profile() -> str:
@@ -90,7 +102,8 @@ def _doctor(scenario: str) -> str:
         _build(tmp, scenario)
         r = subprocess.run([sys.executable, str(tmp / "tools" / "doctor.py")],
                            capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", timeout=180, cwd=tmp)
+                           errors="replace", timeout=180, cwd=tmp,
+                           env=_canonical_env())
         out = (r.stdout or "") + (r.stderr or "")
         assert "Traceback" not in out, f"[{scenario}] 自检崩了：\n{out[-800:]}"
         assert r.returncode == 0, (
@@ -157,7 +170,8 @@ class EveryStartingStateGetsARunnableNextStep(unittest.TestCase):
             _build(tmp, "有用户但没有profile")
             r = subprocess.run([sys.executable, str(tmp / "tools" / "doctor.py")],
                                capture_output=True, text=True, encoding="utf-8",
-                               errors="replace", timeout=180, cwd=tmp)
+                               errors="replace", timeout=180, cwd=tmp,
+                               env=_canonical_env())
             out = (r.stdout or "") + (r.stderr or "")
         self.assertIn("资料还没建", out, "进度段没报出「资料还没建」")
         nxt = out[out.find("下一步做什么"):]
