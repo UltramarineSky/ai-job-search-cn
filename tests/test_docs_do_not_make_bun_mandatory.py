@@ -35,9 +35,6 @@ ROOT = Path(__file__).resolve().parent.parent
 NODE_CALL = re.compile(r"node [^\n]*cli\.ts")
 BUN_CALL = re.compile(r"bun run [^\n]*cli\.ts")
 
-#: CHANGELOG 是历史记录，不是给人照着敲的说明。
-SKIP = ("CHANGELOG.md",)
-
 
 def docs():
     yield from ROOT.glob("*.md")
@@ -50,7 +47,7 @@ class NodeIsAlwaysOfferedAlongsideBun(unittest.TestCase):
     def test_the_scan_finds_cli_docs(self):
         """控制用例：真扫到了给 CLI 调用示例的文档。"""
         found = [p.name for p in docs()
-                 if p.name not in SKIP and NODE_CALL.search(p.read_text(encoding="utf-8"))]
+                 if NODE_CALL.search(p.read_text(encoding="utf-8"))]
         self.assertGreaterEqual(
             len(found), 3,
             f"只有 {found} 给出了 node 调用示例——判据大概失效了")
@@ -91,8 +88,6 @@ class NodeIsAlwaysOfferedAlongsideBun(unittest.TestCase):
     def test_no_doc_offers_only_bun(self):
         bad = []
         for p in docs():
-            if p.name in SKIP:
-                continue
             text = p.read_text(encoding="utf-8")
             if BUN_CALL.search(text) and not NODE_CALL.search(text):
                 bad.append(p.relative_to(ROOT).as_posix())

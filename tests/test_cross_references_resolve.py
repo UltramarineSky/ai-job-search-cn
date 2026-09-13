@@ -325,7 +325,7 @@ class MarkdownLinksResolve(unittest.TestCase):
     点一下，404。而它在本地永远不报错。
 
     2026-08-21 全量扫了 69 份 shipped markdown：**零断链**
-    （README 底部 `SETUP/AGENTS/CONTRIBUTING/SECURITY/CHANGELOG/LICENSE` 六个全在）。
+    （README 底部 `SETUP/AGENTS/CONTRIBUTING/SECURITY/LICENSE` 五个全在）。
     判据留在这里，是为了让「零」保持是零。
 
     ## 占位符不算断链
@@ -377,7 +377,7 @@ class MarkdownLinksResolve(unittest.TestCase):
         """控制用例：README 底部那排文档索引确实被上面那条覆盖到。"""
         t = (ROOT / "README.md").read_text(encoding="utf-8")
         for name in ("SETUP.md", "AGENTS.md", "CONTRIBUTING.md",
-                     "SECURITY.md", "CHANGELOG.md"):
+                     "SECURITY.md"):
             with self.subTest(doc=name):
                 self.assertIn(f"]({name})", t, f"README 不再链接 {name} 了？")
                 self.assertTrue((ROOT / name).is_file(), f"{name} 不在")

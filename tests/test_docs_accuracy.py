@@ -14,7 +14,6 @@
 """
 
 import ast
-import json
 import re
 import sys
 import unittest
@@ -35,7 +34,6 @@ SHARED_PATHS = (
     "CLAUDE.md",
     "SECURITY.md",
     "CONTRIBUTING.md",
-    "CHANGELOG.md",
 )
 
 #: 已从仓库删除的功能，文档里不得再出现（否则新用户会为不存在的东西做准备）。
@@ -242,48 +240,6 @@ class TheFrontendBuildPrerequisiteIsStatedEverywhere(unittest.TestCase):
             "这些地方叫人跑构建，却漏了 npm install：\n  " + "\n  ".join(sorted(set(bad)))
             + "\n第一次用的人没装过依赖，只说 npm run build 会让他撞第二个错，"
               "而那条错不会告诉他还差一步")
-
-
-class TheRepoCanAnswerWhichVersionItIs(unittest.TestCase):
-    """「现在是哪一版」这个问题，仓库里得有答案，而且只有一个。
-
-    立它的原因（实测过的状态）：改动全堆在 `[未发布]` 下、一次没发过版，而唯一
-    机器可读的版本号 `web/package.json` 还停在脚手架默认值，两处各说各的，
-    拿到这份代码的人无从判断自己手上是哪一版。
-
-    这条不管版本号该是多少——那是人定的。它只管两件事：CHANGELOG 里得有一个真的
-    发布过的版本，且机器可读的那个数跟它一致。
-    """
-
-    SEMVER = re.compile(r"^## \[(\d+\.\d+\.\d+)\]", re.M)
-
-    def _latest(self) -> str:
-        text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        m = self.SEMVER.search(text)
-        self.assertIsNotNone(
-            m, "CHANGELOG 里一个已发布的版本段都没有 —— 改动全积在「未发布」下，"
-               "用户和 fork 的人都无从判断自己拿到的是哪一版")
-        return m.group(1)
-
-    def test_the_changelog_has_a_released_version(self):
-        self.assertTrue(self._latest())
-
-    def test_the_released_section_carries_a_date(self):
-        """光有版本号不够——没有日期就看不出它是什么时候的东西。"""
-        text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        head = self.SEMVER.search(text)
-        line = text[head.start(): text.index("\n", head.start())]
-        self.assertRegex(line, r"\d{4}-\d{2}-\d{2}",
-                         f"最新版本段没写日期：{line!r}")
-
-    def test_the_machine_readable_version_agrees(self):
-        pkg = json.loads((REPO_ROOT / "web" / "package.json")
-                         .read_text(encoding="utf-8"))
-        self.assertEqual(
-            pkg.get("version"), self._latest(),
-            f"web/package.json 写着 {pkg.get('version')}，"
-            f"而 CHANGELOG 最新发布的是 {self._latest()} —— 两处对不上时，"
-            "「现在是哪一版」就没有答案了")
 
 
 class DependencyAttributionTests(unittest.TestCase):

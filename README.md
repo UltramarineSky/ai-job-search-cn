@@ -245,7 +245,6 @@ node .agents/skills/liepin-search/cli/src/cli.ts detail "<职位URL>" --format p
 - [AGENTS.md](AGENTS.md) — 全部工作流索引、多用户路径规则、能力对照表（所有 AI 工具的入口）
 - [CONTRIBUTING.md](CONTRIBUTING.md) — 贡献与 fork 说明
 - [SECURITY.md](SECURITY.md) — 安全模型与漏洞报告
-- [CHANGELOG.md](CHANGELOG.md) — 版本变更
 
 ## 许可
 

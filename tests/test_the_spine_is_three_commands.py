@@ -12,15 +12,15 @@
 ## 后来它从两条变成了三条，而只有一半跟着改（2026-08-20 发现）
 
 `/job-outcome` 进脊梁之后，`AGENTS.md` 改成了「只有三条命令」，本文件第一条断言
-也跟着查三个命令——**但文件名、本段说明、README、CHANGELOG 全停在「两条」**。
+也跟着查三个命令——**但文件名、本段说明、README 全停在「两条」**。
 于是同一个概念在同一个仓库里活着两个数：入口文档说三条，落地页说两条。
 
 代价不是数字不好看：**README 的快速开始表当时只有两行，从没告诉新用户投完要记一笔**，
 而催进度、备面、谈薪全都从那一笔长出来。少教一步和多教一步一样有害，
 只是方向相反。
 
-所以下面补了 `TheThreeDocsAgreeOnTheNumber`：三份文档里那个数必须一致，
-且必须等于 `SPINE` 的实际长度。**脊梁再变时，改一处而漏两处会当场红。**
+所以下面补了 `TheDocsAgreeOnTheNumber`：两份文档里那个数必须一致，
+且必须等于 `SPINE` 的实际长度。**脊梁再变时，改一处而漏另一处会当场红。**
 """
 
 import re
@@ -35,12 +35,11 @@ import jsx  # noqa: E402  两标记切片与 firstrun 都在这儿，别再写�
 
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 AGENTS = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
-CHANGELOG = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 COMMANDBOOK = (ROOT / "web" / "src" / "components"
                / "CommandBook.tsx").read_text(encoding="utf-8")
 APP_TSX = (ROOT / "web" / "src" / "App.tsx").read_text(encoding="utf-8")
 
-#: 这条脊梁本身。改它就得改三份文档里的那个数——下面那条断言会盯着。
+#: 这条脊梁本身。改它就得改两份文档里的那个数——下面那条断言会盯着。
 SPINE = ("/job-setup", "/job-auto", "/job-outcome")
 
 #: 中文数词。脊梁不会长到需要第六个。
@@ -83,15 +82,15 @@ class TheSpineIsStated(unittest.TestCase):
                         "README 里 /job-rank 出现得比 /job-auto 还早，新用户会先学到旧路")
 
 
-class TheThreeDocsAgreeOnTheNumber(unittest.TestCase):
-    """入口文档、落地页、更新日志说的必须是同一个数，且等于脊梁的实际长度。
+class TheDocsAgreeOnTheNumber(unittest.TestCase):
+    """入口文档、落地页说的必须是同一个数，且等于脊梁的实际长度。
 
     这条是 2026-08-20 补的：此前**没有任何东西在盯 README 的那个数**，
-    于是 `/job-outcome` 进脊梁之后，`AGENTS.md` 改了、README 和 CHANGELOG 没改，
+    于是 `/job-outcome` 进脊梁之后，`AGENTS.md` 改了、README 没改，
     两个数并行活了一阵谁也没发现。
     """
 
-    DOCS = (("AGENTS.md", AGENTS), ("README.md", README), ("CHANGELOG.md", CHANGELOG))
+    DOCS = (("AGENTS.md", AGENTS), ("README.md", README))
 
     def test_every_doc_states_the_count(self):
         for name, text in self.DOCS:
@@ -157,9 +156,9 @@ def _every_count_in(block: str, pattern: str) -> list[str]:
 class ThePanelSpineAgreesToo(unittest.TestCase):
     """面板的命令帮助（`CommandBook.tsx`）是 UI 侧的快速开始，也要教全脊梁那 N 条。
 
-    实测漏过（2026-09-03 发现）：脊梁从两条变三条时，三份 md 都改了、
+    实测漏过（2026-09-03 发现）：脊梁从两条变三条时，md 都改了、
     **面板这块 .tsx 悄悄停在「日常就这两条」、漏了 `/job-outcome`**——而
-    `TheThreeDocsAgreeOnTheNumber` 只盯 md，够不着 .tsx。同一个概念又在
+    `TheDocsAgreeOnTheNumber` 只盯 md，够不着 .tsx。同一个概念又在
     文档说三、落地页说两分叉了一次。这条把 .tsx 也钉到 `SPINE` 上。
 
     ⚠️ 数的正则不能对整份文件搜——`CommandBook.tsx` 顶部的 JSDoc 注释里
