@@ -71,12 +71,16 @@ class GeneratedEntriesAreCurrent(unittest.TestCase):
                       f"{rel} 存在但生成器不管它 —— 它会漂而没人发现")
 
     def test_generated_files_are_crlf(self):
-        """生成物的行尾由生成器定，统一 CRLF。
+        """生成物的行尾由生成器定，统一 CRLF——**担保人是 `.gitattributes` 那几行**。
 
-        本仓库盘上就是 CRLF（`AGENTS.md`、`.claude/settings.json`、现存两份壳
-        2026-09-28 实测都是 CRLF），而 spec §4.3 的字节账按盘上 CRLF 算——
-        一次行尾翻动会让闸门余量凭空变化。「跟随原文件」的写法还有个洞：
-        一个存成 LF 的文件会永远保持 LF，`--check` 也不会说它不对。
+        没有 `text eol=crlf`，blob 里存的是 LF，Linux 上 checkout 出来也是 LF，
+        而生成器写 CRLF：于是 `--check` 与这条测试**只在 CI 上红**，本地 Windows 的
+        autocrlf 把 LF 转回 CRLF、看起来全绿（2026-09-30 两族壳第一次入库时就这样，
+        两条 CI 报错同一个根）。所以这条断言真正的对象不是「盘上碰巧是 CRLF」，
+        是「任何平台上 checkout 出来的都等于生成器的输出」。
+
+        「跟随原文件」的写法还有个洞：一个存成 LF 的文件会永远保持 LF，
+        `--check` 也不会说它不对。
         """
         for path in gen_entries.desired_files(ROOT):
             if not path.is_file():
