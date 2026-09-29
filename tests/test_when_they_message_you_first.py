@@ -40,7 +40,8 @@ APPLY = (ROOT / "workflows" / "job-apply.md").read_text(encoding="utf-8")
 TPL = (ROOT / "workflows" / "reference"
        / "06-outreach-templates.md").read_text(encoding="utf-8")
 RESUME = (ROOT / "workflows" / "job-resume.md").read_text(encoding="utf-8")
-AGENTS = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+# 索引表的正本：`workflows/INDEX.md`（2026-09-29 从 AGENTS.md 搬出，AGENTS.md 只留指针）。
+INDEX = (ROOT / "workflows" / "INDEX.md").read_text(encoding="utf-8")
 
 
 def flat(s: str) -> str:
@@ -135,7 +136,7 @@ class TheReplyVariantExists(unittest.TestCase):
 
 class TheEntryPointIsNamed(unittest.TestCase):
     def test_the_index_says_where_to_paste_it(self):
-        row = next(l for l in AGENTS.splitlines()
+        row = next(l for l in INDEX.splitlines()
                    if l.startswith("| 深评一个岗"))
         self.assertIn("整段职位描述", row)
         self.assertIn("猎头/HR 主动来找你时", row)

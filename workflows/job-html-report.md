@@ -213,7 +213,7 @@
 - **自适应：** 900px 以上好用，更窄也不能垮
 - **页脚：**「由 ai-job-search 生成 · {ISO 日期}」（页脚也是页面上的字，写中文）。
   **不要写死某个 AI 工具的名字**——这份报表由谁跑就由谁生成，写「由 Claude Code 生成」
-  在 Codex CLI 或 Gemini CLI 下跑出来就是假的。工具名只属于 `AGENTS.md` 的能力对照表。
+  在 Codex CLI 或 Qwen Code 下跑出来就是假的。工具名只属于 `AGENTS.md` 的能力对照表。
 
 ### 图表（内联 SVG）
 

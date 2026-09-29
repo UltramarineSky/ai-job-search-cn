@@ -93,7 +93,14 @@ def jsx_text_nodes(src: str):
 
 
 def tsx_files():
-    return sorted(SRC.rglob("*.tsx"))
+    """面板里**会上屏的字**住的地方。
+
+    原来只 glob `*.tsx`，于是 `data/sample.ts` 里那句写给新用户看的文案
+    （「Claude Code 装了浏览器扩展即可用」）从头到尾没被扫过——连 `TOOL_NAMES`
+    那份「界面上不许点名某家工具」的黑名单都管不到它。`.ts` 里没有 JSX，
+    文本节点那条扫不到东西，但对象字面量里的文案（`OBJ_COPY`）扫得到。
+    """
+    return sorted(list(SRC.rglob("*.tsx")) + list(SRC.rglob("*.ts")))
 
 
 class NoRawMarkdownOnScreen(unittest.TestCase):
@@ -438,9 +445,12 @@ class ReactTextObeysTheWordingRules(unittest.TestCase):
         self.assertEqual(bad, [], "属性里的文案违规：\n  " + "\n  ".join(bad))
 
     #: 具体的 AI 工具名。面板由 Python 生成、给**任何**工具的用户看
-    #: （`AGENTS.md` 开宗明义：Claude Code / Codex CLI / Gemini CLI / Cursor 都从
-    #: 那里进入），所以叫人去干活时只说「命令行」。
-    TOOL_NAMES = ("Claude Code", "Codex", "Gemini CLI", "Cursor")
+    #: （`AGENTS.md` 开宗明义：任何 AI 编码工具都从那里进入），所以叫人去干活时
+    #: 只说「命令行」。这份是**黑名单**，不是「本仓库支持哪几家」的名单 ——
+    #: 已经停掉的 Gemini CLI 也留在里面：面板上点名一个用户没有的东西这件事，
+    #: 不因为那家停了就变得可以。当前支持哪几家，正本在 `docs/tool-entries.md`。
+    TOOL_NAMES = ("Claude Code", "Codex", "Gemini CLI", "Cursor",
+                  "Qwen", "MiMo", "Antigravity", "Qoder")
 
     def test_instructions_do_not_name_one_specific_ai_tool(self):
         """「回命令行里跑」，不是「回某某工具里跑」。
@@ -498,6 +508,11 @@ class ReactTextObeysTheWordingRules(unittest.TestCase):
                 # （`/job-user --new 名字`、`/job-apply <链接>`）。先把命令整体摘掉再扫，
                 # 否则会把「该敲什么」这类最有用的引导判成违规。
                 clean = re.sub(r"/[a-z-]+(?:\s+--?[a-z-]+)*", " ", txt)
+                # 参数还要**单独摘一次**：`${formatCommand("/job-apply")} --stale` 这种
+                # 写法里，插值会先被换成空格，`--stale` 就孤零零留在中文句子中间，
+                # 看着像一个没翻译的英文词——而它恰恰是用户要照敲的那个旗标。
+                # 只认带前导横线的，所以「business」这类真正的行话照样会被抓到。
+                clean = re.sub(r"--?[a-z][a-z-]*", " ", clean)
                 for w in re.findall(r"[A-Za-z]{2,}", clean):
                     if w.upper() in allow:
                         continue

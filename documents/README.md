@@ -75,8 +75,9 @@ python tools/doctor.py
 
 ## 放完之后
 
-```bash
-claude          # 在这个目录启动
+在你自己那家 AI 编码工具里打开这个目录，然后输入：
+
+```
 /job-setup          # 它会先说「我在你的 documents/ 里看到了这些文件」，再逐项跟你确认
 ```
 

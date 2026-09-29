@@ -1,7 +1,7 @@
 # CLAUDE.md — Claude Code 特化入口
 
 **先读并遵守 @AGENTS.md 的全部规则**——角色、活动用户与多用户解析、全局安全铁律、
-工作流索引、能力对照表都在那里，本文件不复述。
+能力对照表都在那里；21 条命令的索引表在 `workflows/INDEX.md`。本文件不复述。
 
 以下仅为 Claude Code 特有的补充。
 
@@ -20,14 +20,17 @@
 
 ## Slash 命令与 skill 触发
 
-- `.claude/commands/` 里的每个命令都是薄 stub，一律读取并严格执行对应的
-  `workflows/<名>.md`。
-- 三个自动触发 skill：`job-application-assistant`（求职咨询语境）、`scrape`
-  （找职位）、`upskill`（技能差距）——正文同在 `workflows/`，壳只负责触发与
-  `allowed-tools` 权限。
-- **壳上的 `allowed-tools` 要盖得住它那份工作流。** 命令 stub 没有 frontmatter、
-  不受限；技能壳有，工作流里要在 shell 里跑的命令没写进去就够不着。实测栽过：
-  `job-upskill` 的工作流写着「用工具分，别手数」，而壳里一条 `Bash` 都没有。
+- `.claude/skills/` 里的每个命令入口都是薄壳（与 `.agents/skills/` 下那份逐字相同，
+  由 `tools/gen_entries.py` 生成），一律读取并严格执行对应的 `workflows/<名>.md`。
+  原来的 `.claude/commands/` 命令 stub 已整体删除——**入口只有壳这一种形态，
+  而每个壳都带 frontmatter**。
+- **每个壳都带触发词**（自动触发），正文同在 `workflows/`，壳只负责触发与
+  `allowed-tools` 权限。生成的那些由 `tools/gen_entries.py` 落，两族逐字相同；只有
+  `job-application-assistant`（求职咨询语境那束宽词）是**手写**的，
+  改了它必须两族同步 —— 它不走生成器，没人替你兜。
+- **壳上的 `allowed-tools` 要盖得住它那份工作流。** 每个入口都是壳、每个壳都有
+  frontmatter，所以工作流里要在 shell 里跑的命令没写进那行 `allowed-tools` 就够不着。
+  实测栽过：`job-upskill` 的工作流写着「用工具分，别手数」，而壳里一条 `Bash` 都没有。
   改工作流时顺手看一眼壳；写法与判据见 `CONTRIBUTING.md`「改技能壳」。
 
 ## 能力对照表的 Claude 侧落点

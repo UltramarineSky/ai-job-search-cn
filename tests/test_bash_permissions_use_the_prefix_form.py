@@ -9,8 +9,8 @@ Claude Code 的 Bash 权限有两种写法：`Bash(<前缀>:*)` 是**前缀匹�
 
 于是永远匹配不上，每次搜岗都要用户手动批一次；在受限工具集里更可能直接被拒。
 
-`.claude/settings.json` 里写的是对的冒号形式（`tools/security_guards.py` 的
-`ALLOWED_PERMISSIONS` 逐字钉着它），而 `SKILL.md` 那几份是空格形式——
+`.claude/settings.json` 里写的是对的冒号形式（那份条目由 `tools/security_guards.py`
+按生成器的清单逐条查出处，`derivable_entries()`），而 `SKILL.md` 那几份是空格形式——
 **守卫只看 settings.json，看不见这处漂移**。这条补上另一半。
 
 ## 这条只管**写法**，不管**写全了没有**
@@ -67,6 +67,40 @@ class BashRulesUsePrefixForm(unittest.TestCase):
         self.assertTrue(ok.rstrip().endswith(":*"))
         self.assertFalse(bad.rstrip().endswith(":*"))
         self.assertTrue(bad.rstrip().endswith("*"))
+
+    def test_no_mid_pattern_wildcard(self):
+        """`:*` 之外不许再有 `*` —— 中间那个星号**是字面量**，不是通配。
+
+        2026-09-29 终审在真 Claude Code（2.1.278）无头会话里实测：同一份
+        `.claude/settings.json`、同一条指令形状，只有规则盖不盖得上这一处不同 ——
+
+            `node .agents/skills/*/cli/src/cli.ts --help`（与规则逐字相等）→ 放行，跑了
+            `node .agents/skills/liepin-search/cli/src/cli.ts --help`（真实调用）→ 要人工批准
+            `pdftotext -layout -enc UTF-8 …`（无通配前缀规则）→ 放行
+
+        也就是说 Claude Code 的 `Bash(<前缀>:*)` 按**字面前缀**比，通配段留在中间时
+        那条规则盖不住任何一次真实调用：读起来是预批，实际是空转。渠道那两条因此
+        改成逐渠道列具体路径（正本 `_entries.PORTAL_BASH`，注释里就是这段实测）。
+        与 Codex 那侧 `codex execpolicy check` 测到的同形 —— 那家也不认中间通配。
+        """
+        bad = []
+        for p in SKILLS + [ROOT / ".claude" / "settings.json"]:
+            for e in (_ENTRY.findall(p.read_text(encoding="utf-8"))
+                      if p.name == "settings.json" else _bash_entries(p)):
+                core = e.rstrip()[:-2] if e.rstrip().endswith(":*") else e.rstrip()
+                if "*" in core:
+                    bad.append(f"{p.relative_to(ROOT).as_posix()}: Bash({e})")
+        self.assertEqual(
+            bad, [],
+            "这些 Bash 规则把 `*` 写在中间，而 Claude 的前缀匹配按字面比，"
+            "于是它们什么都盖不住（静默不生效比没有这条更坏）：\n  "
+            + "\n  ".join(bad))
+
+    def test_the_mid_glob_detector_can_fail(self):
+        """变异内建：判据自己得分得开字面星与合法前缀星。"""
+        self.assertIn("*", "node .agents/skills/*/cli/src/cli.ts:*"[: -2])
+        self.assertNotIn("*", "node .agents/skills/x/cli/src/cli.ts:*"[: -2])
+        self.assertNotIn("*", "pdftotext:*"[: -2])
 
     def test_lint_skills_catches_it(self):
         """判据要在 CI 的 lint 里也有一份，别只活在测试里——

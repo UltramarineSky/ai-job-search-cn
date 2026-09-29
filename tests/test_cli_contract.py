@@ -110,11 +110,16 @@ class PerUserToolsAcceptUser(unittest.TestCase):
     #: 新工具默认被要求支持 `--user`，要豁免得显式加进来并给出理由。
     NO_USER_DATA = {
         # 开发侧检查工具，不读任何人的资料
-        "lint_skills.py": "检查 skill/命令 stub 与 workflows 的接线",
+        "lint_skills.py": "检查两族技能壳与 workflows 的接线",
         "security_guards.py": "检查权限白名单与 gitignore 规则",
         # 下面两个碰用户数据，但「按用户切换」对它们没有意义
         "verify_pdf.py": "按位置参数收 PDF 路径，路径里已经带着是谁的了",
         "template_usage.py": "本来就是**跨所有用户**扫共享模板占用，限定一个人就没用了",
+        # 生成的是**共享框架文件**，一次生成写全仓，没有「这次替谁」这回事
+        "gen_entries.py": "写的只有 .claude/skills、.agents/skills 两族壳与两份 "
+                          "settings.json —— 都是仓库根的文件，不读 .active_user、"
+                          "也不碰 users/ 下的任何东西（加 --user 只会让人以为"
+                          "生成物是按用户分开的）",
     }
 
     #: 不退出 2、而是**照常跑完并把下一步告诉你**的那几个。
@@ -280,7 +285,7 @@ class AFlagWithoutHelpIsAGuess(unittest.TestCase):
     """`--help` 里没写的东西，用户只能猜 —— 最该说清的是「默认不写盘」。
 
     本仓库每个会写盘的工具都**默认试运行**，加 `--apply` 才真写。这是敲裸命令
-    之前最要紧的一件事（`AGENTS.md` 那张索引表第四列「不给参数时」讲的也是它）。
+    之前最要紧的一件事（`workflows/INDEX.md` 那张索引表第四列「不给参数时」讲的也是它）。
 
     实测 2026-08-31：12 个带 `--apply` 的工具里，**4 个的整份 `--help` 从头到尾
     没提过这件事**——
@@ -436,6 +441,12 @@ class CopyableToolsStayStandalone(unittest.TestCase):
     接 `--user` 时给它们加了 `import _cli`，当场 114 个测试变红——拷过去的只有
     脚本自己，`_cli.py` 不在，`ImportError` 让脚本输出空字符串，而断言看到的是
     「没打印预期的错误信息」，跟真正的原因隔着好几层。
+
+    `security_guards.py` 从 2026-09-29 起**不在这份名册上**：它现在要拿生成器的
+    清单逐条查权限条目的出处，所以它的夹具带的是整个 `tools/` 加 `workflows/`
+    （见 `tests/test_security_guards.py` 的 `GuardRepoFixture`），参照系取不到时
+    报成一条守卫失败而不是崩。别再往那棵树里写 `shutil.copy(单个脚本)` ——
+    这条扫描会把守卫重新抓进名册，然后 AST 检查当场红。
     """
 
     #: 谁被单独拷走：从测试代码里**扫出来**，不手写清单——手写的会跟测试脱节。

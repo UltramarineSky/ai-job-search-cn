@@ -8,7 +8,7 @@
 - `doctor.py --help` 照样把活干完
 - `serve.py --help` 直接起了 HTTP 服务器**卡住不返回**
 
-`--help` 干活只是表症。真正的毛病是这四个工具**根本不解析参数**——你敲什么它都
+`--help` 干活只是表症。真正的毛病是这几个工具**根本不解析参数**——你敲什么它都
 当没看见。而仓库里另外六个工具（`gap_split`、`prescreen`、`followups`、`jd_store`、
 `fetch_details`、`template_usage`）**是认 `--user` 的**。也就是说 `--user` 已经是
 这个仓库的词汇，肌肉记忆是现成的：
@@ -2562,17 +2562,57 @@ def detect_code_tool() -> str:
     返回值：
     - "antigravity": Antigravity CLI (agy)
     - "claude": Claude Code
-    - "gemini": Gemini CLI
+    - "mimo": MiMo Code（小米；opencode 的分支）
+    - "qoder": Qoder（实测吃斜杠：技能可按 `/<名>` 请求）
+    - "qwen": Qwen Code（阿里）
     - "generic": 其它终端 / 普通命令行 / 认不出来的助手
 
-    信号全部经过实测取证（2026-09-12，对本机真实安装逐个核对），**不要加
-    「看着像」的变量名**——上一版写的 `CLAUDE_CODE`、`CLAUDE`、`CURSOR_VERSION`、
-    `CODEX` 在对应工具里根本不存在，结果是真 Claude Code 会话被认成 generic。
+    信号全部经过实测取证（2026-09-12 对本机真实安装逐个核对；Qoder 那两个是
+    2026-09-29 在一个真 Qoder CN 会话里 `env | grep -i qoder` 现测的；Qwen 与 MiMo
+    是 2026-09-30 读各自源码/bundle 定的，出处见下），
+    **不要加「看着像」的变量名**——上一版写的 `CLAUDE_CODE`、`CLAUDE`、
+    `CURSOR_VERSION`、`CODEX` 在对应工具里根本不存在，结果是真 Claude Code
+    会话被认成 generic。
     - Claude Code 给所有子进程注入 `CLAUDECODE=1`（另有 CLAUDE_CODE_ENTRYPOINT）。
     - agy.exe 里有字面量 `ANTIGRAVITY_AGENT=1`。
-    - Gemini CLI 的 ShellExecutionService 给它起的每个子 shell 注入 `GEMINI_CLI=1`。
+    - Qoder CN：`QODERCN_CLI=1`（`QODER_PRODUCT_ID=qoder-cn` 那份构建的 CLI 标记）
+      与 `QODER_AGENT_SDK_ENTRYPOINT=sdk-ts`（它的 agent SDK 给自己起的进程，
+      对位 Claude 的 CLAUDE_CODE_ENTRYPOINT）。⚠️ 这两个是不是桌面端也注入，
+      从会话内部**测不出来**（能看到的只有「在当前这个 Qoder 会话里它在」）。
+      **这不妨碍用它**：本函数的返回值只往一个下游流（`doctor.COMMAND_SYNTAX`
+      那张表），而 Qoder 那一格是 2026-09-29 在真会话里实测出来的 —— 它的 harness
+      自己写着技能可按 `/<名>` 请求，所以给斜杠。剩下的偏差最坏是自检里那行工具名
+      不准：真敲不动的时候还有触发词，把要办的事说出来照样接得住。反过来说，
+      国际版的标记名**没实测过**：计划文档 §6 写着还有个 `QODER_CLI=1`，2026-09-29
+      在真会话里复现不出来（只有 `-cn` 那份），所以不用它——将来真测到再加，
+      别为凑一家去猜。
+    - Qwen Code：它的 ShellExecutionService 给自己起的每个子 shell 注入
+      `QWEN_CODE: "1"`（本机 0.14.0 的 `cli.js:183705` 与 `:183862`，两处 `cpSpawn`
+      的 `env:` 块里；0.24.7 同一信号出现在更多起进程的地方）。
+    - MiMo Code：主进程里直接 `process.env.MIMOCODE = "1"`
+      （`packages/opencode/src/index.ts:116`，紧邻 `AGENT=1` 与 `MIMOCODE_PID`），
+      子进程继承，所以比「只注给子 shell」那种更稳。MiMo 是 opencode 的分支，
+      但它**不设** `OPENCODE`（同文件 grep 无命中），`MIMOCODE` 因此能唯一认出它。
+    - **Gemini CLI 那一档 2026-09-30 整条删掉。** `GEMINI_CLI=1` 是**真信号**
+      （它也给子 shell 注入），跟上面那批凭空写的假变量不是一回事；删它的理由是
+      那家已停：包还在发版（0.61.0，2026-09-24），但个人版登录通道被关了
+      （登录返回 `reasonCode: "UNSUPPORTED_CLIENT"` / `tierId: "free-tier"`），
+      官方把命令行这条线指向 Antigravity CLI（用户 2026-09-30 告知）。
+      认一个装不上的工具没有意义 —— 探测出来的名字是用户判断「探测对不对」的
+      唯一线索，印错了比不印更坏。它的技能目录（`.gemini/skills`）与 `.agents/skills`
+      本来就都由 agy 接手，删掉这一档不丢任何覆盖面。
+      ⚠️ 教训同时记一条：**「本机这一版的行为」不是「这家工具的行为」**。
+      Qwen 那次就是据 0.14.0 下了「不扫 `.agents/skills`、不认斜杠」的结论，
+      被 2026-09-29 发的 0.24.7 当场打回（`PROJECT_SKILL_DIRS = [".qwen", ".agents"]`）。
+      下结论前先看版本，改判据前先看是不是新版已经改了。
     - Cursor 没有可识别的标记（集成终端里 TERM_PROGRAM 是 "vscode" 不是 "cursor"）；
-      Codex CLI 也没有。两者行为与 generic 相同（都走免斜杠），不必分档。
+      Codex CLI 也没有；OpenCode 有 `OPENCODE=1` 但**没实测**它认不认斜杠
+      （源码里技能是以 `source: "skill"` 进命令表的，文档却写成「agent 直接调用的
+      工具」，两边打架），按「没实测过 → generic」处理，不为它开档。
+      Cursor 落 generic（免斜杠）就是我们要的行为；**Codex 也一样** —— 它是
+      实测过的那几家里唯一拦斜杠的（二进制里那句 `Unrecognized command`），
+      没有信号反而让它正好落在安全那一档，所以既不必为它加信号、也不必给表里加格。
+      认不出来就落 generic —— 那是免斜杠那一档，兜的就是「没实测过的工具」。
       识别错了可用环境变量 JOBS_CODE_TOOL 手工覆盖（doctor 的工具名提示仍认它）。
 
     doctor.py 因「只用标准库、不 import 仓库模块」的契约保有一份逐字副本，
@@ -2587,7 +2627,11 @@ def detect_code_tool() -> str:
         return "antigravity"
     if os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_ENTRYPOINT"):
         return "claude"
-    if os.environ.get("GEMINI_CLI"):
-        return "gemini"
+    if os.environ.get("QODERCN_CLI") or os.environ.get("QODER_AGENT_SDK_ENTRYPOINT"):
+        return "qoder"
+    if os.environ.get("QWEN_CODE"):
+        return "qwen"
+    if os.environ.get("MIMOCODE"):
+        return "mimo"
     return "generic"
 

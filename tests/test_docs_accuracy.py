@@ -22,6 +22,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ENTRY_DOCS = ("README.md", "SETUP.md")
 
+sys.path.insert(0, str(REPO_ROOT / "tools"))
+import _entries  # noqa: E402  两族目录与手写壳名单的正本在派生器里，这里不另抄一份
+
 #: 共享框架文件：不按活动用户解析，必须真实存在于仓库根。
 SHARED_PATHS = (
     "resume/template.typ",
@@ -80,6 +83,10 @@ class TheCapabilityTableIsTheOnlySourceForDegradation(unittest.TestCase):
     这两类都不是分叉源。真正的分叉源是**另起一张表把降级列抄过去**，所以判据锚在
     表格行上：能力对照表之外，任何以 `|` 开头的行都不许带这些短语。散文里提、
     引号里引，随便。
+
+    扫描范围见 `FILES`。2026-09-29 Task 10 把「换个工具，哪些命令还能用」那张表
+    搬到 `docs/tool-entries.md`，名单跟着搬 —— 否则判据只在旧家跑，新家那张表
+    抄了什么没人管，而搬家后最容易重犯的正是「同一张表两处各自说法」。
     """
 
     #: 取自能力对照表「无此能力时的降级」列，每条都足够独特，不会在正常行文里撞上
@@ -91,34 +98,69 @@ class TheCapabilityTableIsTheOnlySourceForDegradation(unittest.TestCase):
         "请用户粘贴页面文本",
     ]
 
+    #: 判据扫哪些文件。**第二份是 2026-09-29 Task 10 搬过去的落点**：那张
+    #: 「卡住哪几条」表原来住在 `AGENTS.md`，正因为在判据范围内才没抄降级列。
+    #: 表搬走了而扫描名单不跟着搬，判据就只在 `AGENTS.md` 剩下的一张表上跑，
+    #: 「别的表不许复述降级列」这条在新家**一个字都不守** —— 而它防的正是搬家后
+    #: 最可能重犯的事（同一张表被抄两处、两处各自说法）。
+    FILES = ("AGENTS.md", "docs/tool-entries.md")
+
     def _table_span(self, text: str):
-        """能力对照表的起止字符位置（从小节标题到下一个 `##` 标题）。"""
-        start = text.index("## 能力对照表")
+        """能力对照表的起止字符位置（从小节标题到下一个 `##` 标题）。
+
+        表不在这一份文件里 → 返回空跨度 `(-1, -1)`，于是这份文件里**每一张**表都在
+        判据范围内。方向是更严，不是更松。
+        """
+        start = text.find("## 能力对照表")
+        if start == -1:
+            return -1, -1
         nxt = text.find("\n## ", start + 1)
         return start, (nxt if nxt != -1 else len(text))
 
-    def test_no_other_table_restates_the_degradation(self):
-        text = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
-        lo, hi = self._table_span(text)
+    def _scan(self):
         bad = []
-        for i, line in enumerate(text.splitlines(), 1):
-            if not line.lstrip().startswith("|"):
-                continue                      # 散文与引用不算
-            off = text.index(line) if text.count(line) == 1 else None
-            if off is not None and lo <= off < hi:
-                continue                      # 就在能力对照表里，正当
-            for ph in self.PHRASES:
-                if ph in line:
-                    bad.append(f"AGENTS.md:{i} 又排了一遍降级写法：「{ph}」")
+        for rel in self.FILES:
+            path = REPO_ROOT / rel
+            if not path.is_file():
+                bad.append(f"{rel} 在扫描名单里却不在盘上（判据对着幽灵跑）")
+                continue
+            text = path.read_text(encoding="utf-8")
+            lo, hi = self._table_span(text)
+            for i, line in enumerate(text.splitlines(), 1):
+                if not line.lstrip().startswith("|"):
+                    continue                  # 散文与引用不算
+                off = text.index(line) if text.count(line) == 1 else None
+                if off is not None and lo <= off < hi:
+                    continue                  # 就在能力对照表里，正当
+                for ph in self.PHRASES:
+                    if ph in line:
+                        bad.append(f"{rel}:{i} 又排了一遍降级写法：「{ph}」")
+        return bad
+
+    def test_no_other_table_restates_the_degradation(self):
+        bad = self._scan()
         self.assertEqual(
             bad, [],
             "\n  ".join([""] + bad)
             + "\n降级写法只归「能力对照表」那一张；别的表要提就指过去，别复述。")
 
+    def test_the_relocated_table_is_still_in_scope(self):
+        """控制用例：搬走的那张表必须**真的**还在扫描范围内，否则搬家=撤岗。"""
+        path = REPO_ROOT / "docs/tool-entries.md"
+        self.assertTrue(path.is_file(),
+                        "落点文件不见了 —— 上面那条只扫得到 AGENTS.md 一张表")
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("| 能力 | 卡住哪几条 |", text,
+                      "「卡住哪几条」那张表不在 `docs/tool-entries.md` 里了？")
+        self.assertEqual(self._table_span(text), (-1, -1),
+                         "能力对照表搬进了落点文件，豁免跨度会把它整张表放行")
+
     def test_the_phrases_are_actually_in_the_table(self):
         """控制用例：短语若从能力对照表里消失，上面那条就在验一个不存在的规则。"""
         text = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
         lo, hi = self._table_span(text)
+        self.assertNotEqual((lo, hi), (-1, -1),
+                            "`AGENTS.md` 里没有「## 能力对照表」这一节了")
         table = text[lo:hi]
         missing = [ph for ph in self.PHRASES if ph not in table]
         self.assertEqual(missing, [],
@@ -269,36 +311,81 @@ class DependencyAttributionTests(unittest.TestCase):
                          "判据见 test_cross_references_resolve）")
 
 
-class StubsAndWorkflowsAgreeOnWhatTheCommandIs(unittest.TestCase):
-    """`.claude/commands/<名>.md` 是薄壳，标题必须和 `workflows/<名>.md` 一模一样。
+class ShellNamesMatchTheirWorkflows(unittest.TestCase):
+    """壳名 = 工作流名 = 命令名。三者不一致，面板上那条命令在别的工具里就叫不动。
 
-    壳是**用户在命令列表里看到的那一行**，正文是 AI 真正执行的东西。两处说的不是
-    同一件事时，用户按描述挑了一个命令，拿到的是另一件事。
+    原来这一对比的是 `.claude/commands/<名>.md` 的**标题行**与工作流 H1 逐字相同
+    （实测抓到过 `/job-dashboard` 那处：正文改了、壳还写着「本地静态单页」）。命令
+    stub 删掉之后那份抄件不存在了：入口标题由 `tools/gen_entries.py` 从索引派生，
+    「抄件会飘」这个失败面整个消失，剩下的两条各归一处 ——
+    索引与工作流 H1 的段数一致性在 `tests/test_index_matches_the_workflows.py`
+    （`test_an_arrow_chain_in_the_title_matches_the_index`），生成物与派生器一致在
+    `tests/test_generated_entries_are_current.py`。
 
-    实测抓到一处：`/job-dashboard` 改产单文件之后，正文标题改了、壳还写着「本地静态
-    单页」。16 个壳对 18 个工作流，靠人对是对不完的。
+    这里留的是那两条都不管的那半边：**每一份壳都要对得上一份工作流正文**。
+    壳是入口，没有正文 = 敲进去一个空房间。
     """
 
-    def test_titles_match(self):
-        bad = []
-        for stub in sorted((REPO_ROOT / ".claude" / "commands").glob("*.md")):
-            wf = REPO_ROOT / "workflows" / stub.name
-            if not wf.is_file():
-                continue
-            a = stub.read_text(encoding="utf-8").splitlines()[0].strip()
-            b = wf.read_text(encoding="utf-8").splitlines()[0].strip()
-            if a != b:
-                bad.append(f"{stub.name}\n      壳：{a}\n      正文：{b}")
-        self.assertEqual(bad, [],
-                         "命令壳与工作流正文的标题对不上——"
-                         "用户在列表里读到的和实际执行的不是一件事：\n  "
-                         + "\n  ".join(bad))
+    def test_shell_name_matches_its_workflow(self):
+        for fam in _entries.SHELL_FAMILIES:
+            for p in sorted((REPO_ROOT / fam / "skills").glob("*/SKILL.md")):
+                name = p.parent.name
+                if name in _entries.HANDWRITTEN_NAMES:
+                    continue            # 路由壳没有工作流，它是入口不是命令
+                if (p.parent / "cli" / "src" / "cli.ts").is_file():
+                    continue            # 可插拔渠道技能：不是命令入口（判据同 AGENTS.md）
+                self.assertTrue((REPO_ROOT / "workflows" / f"{name}.md").is_file(),
+                                f"{fam}/skills/{name}: 没有对应的工作流正文 —— "
+                                "壳是入口，没正文就等于把用户领进一间空房间")
 
-    def test_every_stub_has_a_workflow(self):
-        """壳指向不存在的正文 = 敲了就撞空。"""
-        missing = [p.name for p in (REPO_ROOT / ".claude" / "commands").glob("*.md")
-                   if not (REPO_ROOT / "workflows" / p.name).is_file()]
-        self.assertEqual(missing, [], f"这些命令壳没有对应的工作流：{missing}")
+    def test_the_scan_reaches_both_families(self):
+        """控制用例：两族都真扫到了壳。空转的 glob 会让上面那条恒绿 ——
+        而它绿着的时候看起来和「查过了」一模一样。"""
+        seen = {fam: len(list((REPO_ROOT / fam / "skills").glob("*/SKILL.md")))
+                for fam in _entries.SHELL_FAMILIES}
+        self.assertTrue(all(n >= 21 for n in seen.values()),
+                        f"两族壳数像是没扫到：{seen}")
+
+
+class TheToolCountIsTheEnumeration(unittest.TestCase):
+    """文档里「N 家工具（…）」的数字必须与它括号里点的名一致。
+
+    2026-09-29 Task 11 收的一条尾巴：`docs/tool-entries.md` 开头写「五家」、
+    `AGENTS.md` 指着它的句子写「四家」，两份说的其实是同一批工具 —— 而数字本身
+    没有任何东西对着数，改一处另一处不会红。**修法不是挑一个数字**（挑哪个都会
+    再漂一次），是把数字钉在点名上：那句话里点出的工具名数量必须等于汉字数字。
+    将来接进第六家工具，点名会变，数字不改就红。
+    """
+
+    CN = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
+          "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+    PAT = re.compile(r"([一二两三四五六七八九十]+)家工具（([^）]*)）")
+
+    def test_the_numeral_agrees_with_the_named_tools(self):
+        text = (REPO_ROOT / "docs" / "tool-entries.md").read_text(encoding="utf-8")
+        hits = list(self.PAT.finditer(text.replace(chr(10), " ")))
+        self.assertTrue(hits,
+                        "找不到「N 家工具（点名）」那句——句式改了就把这条一起改，"
+                        "别让它绿着空转")
+        for m in hits:
+            named = [n.strip() for n in m.group(2).split("、") if n.strip()]
+            self.assertEqual(
+                len(named), self.CN[m.group(1)],
+                f"写的是「{m.group(1)}家」，括号里点了 {len(named)} 个：{named}")
+
+    def test_the_named_tools_are_the_ones_the_repo_targets(self):
+        """点出来的每一家都要在 `tools/_entries.py` 或 `tools/_cli.py` 里有个影子，
+        否则名单本身是编的。"""
+        text = (REPO_ROOT / "docs" / "tool-entries.md").read_text(encoding="utf-8")
+        m = self.PAT.search(text.replace(chr(10), " "))
+        self.assertIsNotNone(m)
+        blob = " ".join(
+            (REPO_ROOT / rel).read_text(encoding="utf-8")
+            for rel in ("tools/_entries.py", "tools/_cli.py", "SETUP.md"))
+        for name in (n.strip() for n in m.group(2).split("、")):
+            key = name.split()[0].lower()
+            self.assertIn(key, blob.lower(),
+                          f"{name} 被点名家数，可仓库里没有它的任何接入痕迹")
 
 
 if __name__ == "__main__":

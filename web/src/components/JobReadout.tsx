@@ -797,7 +797,7 @@ function ReadoutBody({ job, onExclude, onExpire, onChanged, reasons = [] }: {
             {"，也没做公司调研、没比对你的经历缺口。"}
             {applyAbove ? (
               <>
-                上面那条 <code>/job-apply</code> 跑完才会有这些。
+                上面那条 <Cmd>/job-apply</Cmd> 跑完才会有这些。
               </>
             ) : (
               <>

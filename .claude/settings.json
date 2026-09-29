@@ -2,8 +2,8 @@
   "permissions": {
     "allow": [
       "Skill(job-application-assistant)",
-      "Bash(node .agents/skills/*/cli/src/cli.ts:*)",
-      "Bash(bun run .agents/skills/*/cli/src/cli.ts:*)",
+      "Bash(node .agents/skills/liepin-search/cli/src/cli.ts:*)",
+      "Bash(bun run .agents/skills/liepin-search/cli/src/cli.ts:*)",
       "Bash(pdftotext:*)"
     ]
   }

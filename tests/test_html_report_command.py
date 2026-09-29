@@ -63,8 +63,9 @@ class TheOpenFlagActuallyOpens(unittest.TestCase):
     """
 
     def test_the_index_still_promises_it(self):
-        """控制用例：承诺还在，否则下面那条在为一个不存在的承诺把关。"""
-        ag = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        """控制用例：承诺还在，否则下面那条在为一个不存在的承诺把关。
+        （索引表正本在 workflows/INDEX.md，2026-09-29 从 AGENTS.md 搬过去。）"""
+        ag = (REPO_ROOT / "workflows" / "INDEX.md").read_text(encoding="utf-8")
         i = ag.index("`workflows/job-html-report.md`")
         self.assertIn("直接打开", ag[i:i + 300], "索引不再承诺「直接打开」了？")
 

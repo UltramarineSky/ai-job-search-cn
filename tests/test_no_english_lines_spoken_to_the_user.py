@@ -110,29 +110,39 @@ class WhatWeSayToTheUserIsChinese(unittest.TestCase):
         a Ranked Shortlist」，三个 skill 的描述整段英文。**用户还没进任何流程，就先
         撞上一屏英文**——比中途冒一句英文更早、更劝退。
 
-        标题形如 `# /job-apply —— <说明>`：命令名本身是英文（那是要敲的东西），
-        只检查命令名之后的说明部分。
+        **那一屏今天由谁提供，这里就扫谁。** 2026-09-29 那次实测扫的是
+        `.claude/commands/*.md` 的 H1 标题（形如 `# /job-apply —— <说明>`，命令名本身
+        是英文，只查它后面的说明）。命令 stub 已整体删除（Task 8），那个目录现在是空的
+        —— 原来那段循环留着也不会报错，只会**每轮扫 0 个文件还全绿**，正是这一节在防的
+        「没看伪装成都通过了」。斜杠命令与自动触发现在都出自两族技能壳，所以覆盖的是
+        壳 frontmatter 里那行 `description:`，下面还有一条元测试钉住扫到的份数。
 
-        **切在命令名上，不切在分隔符上。** 原来这里写死 `split(" - ")`，于是分隔符
-        一旦改样式（`-` → `——`），整行取不出说明、`desc` 为空，检查静默跳过——
-        「没看」又一次伪装成「都通过了」。命令名是 stub 文件名，改不了也不会漂。
+        壳那份 description 的**中文要求本身**由 `tests/test_workflow_prose_is_chinese.py`
+        与生成器一路也盯着；本条是它在「英文整句」这个判据上的那一份，两处判据不同、
+        不重复。
         """
         bad = []
-        for p in sorted((ROOT / ".claude" / "commands").glob("*.md")):
-            h1 = next((l for l in p.read_text(encoding="utf-8").splitlines()
-                       if l.startswith("# ")), "")
-            desc = h1.split(f"/{p.stem}", 1)[-1].lstrip(" -—:：|·").strip()
-            if desc and not re.search(r"[一-鿿]", desc):
-                bad.append(f"{p.name}  {desc[:60]}")
-        for p in sorted((ROOT / ".claude" / "skills").glob("*/SKILL.md")):
+        shells = sorted((ROOT / ".claude" / "skills").glob("*/SKILL.md")) + \
+            sorted((ROOT / ".agents" / "skills").glob("*/SKILL.md"))
+        for p in shells:
             fm = p.read_text(encoding="utf-8").split("---")[1]
             m = re.search(r"^description:\s*>?\s*\n?((?:\s+.+\n)+)", fm, re.M)
             if m and not re.search(r"[一-鿿]", m.group(1)):
-                bad.append(f"{p.parent.name}/SKILL.md  {m.group(1).strip()[:60]}")
+                bad.append(f"{p.relative_to(ROOT).as_posix()}  {m.group(1).strip()[:60]}")
         self.assertEqual(
             bad, [],
-            "这些是敲 `/` 时看到的说明，却是英文——用户还没进流程就先撞一屏英文：\n  "
+            "这些是命令面板/技能列表里看到的说明，却是英文——用户还没进流程就先撞一屏英文：\n  "
             + "\n  ".join(bad))
+
+    def test_the_shell_scan_is_not_scanning_nothing(self):
+        """元测试：上面那条的扫描集不许为空。
+
+        删掉 `.claude/commands/` 那半截的同时，把「扫到 0 个文件 = 全绿」这个失败方式
+        也一起删掉：两族各 22 份壳，加 `.agents/` 里的渠道壳，少了就是 glob 打空了。
+        """
+        n = len(list((ROOT / ".claude" / "skills").glob("*/SKILL.md"))) + \
+            len(list((ROOT / ".agents" / "skills").glob("*/SKILL.md")))
+        self.assertGreaterEqual(n, 44, f"只扫到 {n} 份壳 —— glob 打空了")
 
     def test_no_english_speech(self):
         bad = [f"{rel}:{i}  {body[:72]}"

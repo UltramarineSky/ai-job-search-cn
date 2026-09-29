@@ -82,7 +82,8 @@ def _flags(tool: str) -> set:
 
 def _sources():
     yield from sorted((ROOT / "workflows").rglob("*.md"))
-    # 技能壳与命令 stub —— 已删的那份守卫扫这里，合并时一并接过来。
+    # 两族技能壳（`.claude/commands/` 的命令 stub 已删，这里扫到的是 `.claude/skills/`
+    # 那批壳）—— 已删的那份守卫扫这里，合并时一并接过来。
     yield from sorted((ROOT / ".claude").rglob("*.md"))
     yield from sorted((ROOT / "tools").glob("*.py"))
     if (ROOT / "web" / "src").is_dir():

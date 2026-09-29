@@ -5,7 +5,7 @@
 它们此前**一条守卫都没有**：
 
 1. **仓库文件路径** —— 反引号里的 `xxx/yyy.md`；
-2. **命令名** —— `/job-xxx`（要同时认 `.claude/commands/` 与 `.claude/skills/`）；
+2. **命令名** —— `/job-xxx`（要认两族的技能壳 `.claude/skills/` 与 `.agents/skills/`）；
 3. **工具开关** —— 流程里写的 `python tools/xxx.py --flag`，那个 flag 得在 `--help` 里。
 
 第 3 类最要命：AI 会**照着敲**。开关不存在不是「文档不准」，是命令当场退出。
@@ -23,6 +23,9 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+sys.path.insert(0, str(ROOT / "tools"))
+import _entries  # noqa: E402  两族目录名的正本在派生器里，这里不另抄一份
 
 #: 这些前缀是**按活动用户解析**的个人数据路径（`AGENTS.md`「活动用户与多用户」），
 #: 仓库根下本来就不该有，不算断链。
@@ -51,6 +54,19 @@ def _docs() -> dict:
     for n in ("AGENTS.md", "CLAUDE.md", "README.md", "SETUP.md", "CONTRIBUTING.md"):
         if (ROOT / n).is_file():
             out[n] = (ROOT / n).read_text(encoding="utf-8")
+    # 搬家搬出去的节也要有人扫，否则「某文件的『某节』」这类指针在新家失联没人知道。
+    # `docs/tool-entries.md` 是 Task 10 从 `AGENTS.md`「工具特化」搬出去的落点，
+    # 姊妹判据 `tests/test_cross_file_section_refs.py` 的名单 2026-09-29 已经扩到它，
+    # 这份当时漏了 —— 两份名单各自长，漏的那份就是静默放行。
+    # Task 11 的落点 `workflows/reference/cdp-portals.md` 在上面 `workflows/**` 那条里，
+    # 不重复列；`docs/superpowers/` 是 gitignore 的会话产物，**永远不进这份名单**
+    # （权威不许落在那儿，见 `tools/security_guards.py` 顶部那条教训）。
+    # Task 12 的落点 `docs/why/*.md` 同理：搬出去的记录要是没人扫，指向它们的
+    # 「某文件的『某节』」就在新家失联也没人知道。
+    for n in ((ROOT / "docs" / "tool-entries.md",)
+              + tuple(sorted((ROOT / "docs" / "why").glob("*.md")))):
+        if n.is_file():
+            out[str(n.relative_to(ROOT))] = n.read_text(encoding="utf-8")
     return out
 
 
@@ -280,36 +296,43 @@ class SectionCitationsResolve(unittest.TestCase):
 
 
 class CommandNamesResolve(unittest.TestCase):
-    """`/job-xxx` 要么是 `.claude/commands/` 的 stub，要么是 `.claude/skills/` 的技能。
+    """`/job-xxx` 要在**两族技能壳**里各有一份。
 
-    **两处都要认。** 只查 commands 会把 `/job-scrape`、`/job-upskill` 报成断链——
-    它们是自动触发 skill（见 `CLAUDE.md`），一样敲得通。
+    原来这里认两个落点：`.claude/commands/` 的 stub 与 `.claude/skills/` 的壳，
+    而且「任一处有」即算通过 —— 因为 `/job-scrape`、`/job-upskill` 当时只有壳。
+    stub 删掉之后入口只剩壳一种形态，而壳一次落两族：`.claude/skills/` 给
+    Claude Code，`.agents/skills/` 给其余各家。判据因此**变严**而不是变松：
+    一族有一族没有 = 那一家的工具敲不到这条命令，不能算装上。
     """
 
-    def _installed(self) -> set:
-        out = {p.stem for p in (ROOT / ".claude" / "commands").glob("*.md")}
-        sk = ROOT / ".claude" / "skills"
-        if sk.is_dir():
-            out |= {p.name for p in sk.iterdir() if p.is_dir()}
-        return out
+    def _installed(self, fam: str) -> set:
+        sk = ROOT / fam / "skills"
+        return {p.name for p in sk.iterdir() if p.is_dir()} if sk.is_dir() else set()
 
     def test_every_command_mentioned_is_installed(self):
-        have = self._installed()
-        self.assertGreaterEqual(len(have), 15, "命令目录像是没扫到")
+        fams = _entries.SHELL_FAMILIES
+        have = set.intersection(*(self._installed(f) for f in fams))
+        self.assertGreaterEqual(len(have), 15, "技能壳目录像是没扫到")
         bad = set()
         for f, t in _docs().items():
             for m in re.finditer(r"(/job-[a-z-]+)", t):
                 if m.group(1).lstrip("/") not in have:
                     bad.add(f"{f} → {m.group(1)}")
         self.assertEqual(sorted(bad), [],
-                         "这些命令文档里提了、装不上：\n  " + "\n  ".join(sorted(bad)))
+                         "这些命令文档里提了、至少一族没有壳（那一家的工具敲不到）：\n  "
+                         + "\n  ".join(sorted(bad)))
 
     def test_every_workflow_has_an_entry_point(self):
-        """反过来：每个 `workflows/job-*.md` 都要有 stub 或 skill，否则没人敲得到它。"""
+        """反过来：每个 `workflows/job-*.md` 都要在两族**各**有一份壳，否则没人敲得到它。
+
+        逐族分别核，不取并集：并集会让「只生成了一半」那种状态放行。
+        """
         wf = {p.stem for p in (ROOT / "workflows").glob("job-*.md")}
-        orphan = sorted(wf - self._installed())
-        self.assertEqual(orphan, [],
-                         f"这些流程没有入口，用户敲不到：{orphan}")
+        self.assertGreaterEqual(len(wf), 15, "workflows/ 像是没扫到")
+        for fam in _entries.SHELL_FAMILIES:
+            orphan = sorted(wf - self._installed(fam))
+            self.assertEqual(orphan, [],
+                             f"{fam}/skills 里缺这些工作流的壳，用户敲不到：{orphan}")
 
 
 class MarkdownLinksResolve(unittest.TestCase):

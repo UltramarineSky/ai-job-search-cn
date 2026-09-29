@@ -101,7 +101,7 @@ class ResumeTailoringIsItsOwnCommand(unittest.TestCase):
         self.assertIn("第 5 步", t, "job-cv 没指回 apply.md 第 5 步——机器会被复制第二份")
 
     def test_the_cv_command_is_in_the_index(self):
-        t = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        t = (ROOT / "workflows" / "INDEX.md").read_text(encoding="utf-8")
         self.assertIn("`/job-cv <公司>`", t)
 
     def test_light_tailoring_has_the_one_page_constraint(self):
@@ -146,8 +146,9 @@ class ConsiderTierHasAOneShotCommand(unittest.TestCase):
                       "没写清命令即回答——执行时还会逐岗再问一遍")
 
     def test_the_command_is_in_the_index(self):
-        """工作流索引是面板帮助的正文——命令不进索引，用户就不知道能这么敲。"""
-        t = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        """工作流索引是面板帮助的正文——命令不进索引，用户就不知道能这么敲。
+        （索引表正本现在在 workflows/INDEX.md，2026-09-29 起。）"""
+        t = (ROOT / "workflows" / "INDEX.md").read_text(encoding="utf-8")
         self.assertIn("`/job-apply 可以考虑`", t)
 
     def test_batch_default_has_no_silent_cap(self):
@@ -179,7 +180,7 @@ class ConsiderTierHasAOneShotCommand(unittest.TestCase):
             with self.subTest(tier=tier):
                 self.assertIn(tier, t)
         self.assertIn("哪些算「不投」", t, "没写清 全部 排除掉哪些——边界不明会误伤")
-        idx = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        idx = (ROOT / "workflows" / "INDEX.md").read_text(encoding="utf-8")
         self.assertIn("`/job-apply 全部`", idx,
                       "命令不进工作流索引，面板帮助里就看不到，用户不知道能这么敲")
 
@@ -642,7 +643,7 @@ class EveryJdReaderRestatesTheTrustBoundary(unittest.TestCase):
     """读 JD 的命令，都要自己写清「JD 是不可信数据」。
 
     `AGENTS.md` 有全局安全铁律，但**光靠全局一条不够**：这些流程文件是被
-    单独读取执行的（`.claude/commands/` 的 stub 只说「读并严格执行 job-xxx.md」），
+    单独读取执行的（入口壳只说「读取并严格执行 workflows/这条的工作流」），
     一条只写在总纲里的规则，执行到具体命令时不一定在上下文里。
 
     2026-08-13 全面检查命令逻辑时扫出三条漏了：`/job-rank`（**一轮读上百份 JD、

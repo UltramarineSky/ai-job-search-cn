@@ -19,6 +19,7 @@
 """
 
 import re
+import sys
 import unittest
 from pathlib import Path
 
@@ -26,17 +27,24 @@ ROOT = Path(__file__).resolve().parent.parent
 AUTO = ROOT / "workflows" / "job-auto.md"
 RANK = ROOT / "workflows" / "job-rank.md"
 
+sys.path.insert(0, str(ROOT / "tools"))
+import _entries  # noqa: E402  两族目录名的正本在派生器里，这里不另抄一份
+
 
 class TheAutoWorkflowIsWired(unittest.TestCase):
 
-    def test_it_exists_and_has_a_stub(self):
+    def test_it_exists_and_has_an_entry_in_both_families(self):
         self.assertTrue(AUTO.is_file(), "workflows/job-auto.md 不见了")
-        self.assertTrue((ROOT / ".claude" / "commands" / "job-auto.md").is_file(),
-                        "没有 stub —— 用户敲 /job-auto 会敲空")
+        # 入口是两族各一份壳（`.claude/skills/` 给 Claude Code，`.agents/skills/` 给
+        # 其余各家）。原来这条查的是 `.claude/commands/job-auto.md` 那个 stub ——
+        # 只有 Claude Code 读得到它，其余各家缺壳照样绿，正是「入口」二字骗人的地方。
+        for fam in _entries.SHELL_FAMILIES:
+            self.assertTrue((ROOT / fam / "skills" / "job-auto" / "SKILL.md").is_file(),
+                            f"{fam}/skills 里没有 job-auto 的壳 —— 用户敲 /job-auto 会敲空")
 
     def test_it_is_listed_in_the_index(self):
-        """索引是权威来源，也是面板那份帮助的正文（见 AGENTS.md 那张表）。"""
-        t = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        """索引是权威来源，也是面板那份帮助的正文（索引表正本在 workflows/INDEX.md）。"""
+        t = (ROOT / "workflows" / "INDEX.md").read_text(encoding="utf-8")
         self.assertIn("workflows/job-auto.md", t,
                       "/job-auto 没进工作流索引 —— 面板上查无此人")
 

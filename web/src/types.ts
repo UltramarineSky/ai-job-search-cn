@@ -405,7 +405,7 @@ export interface Job {
   /**
    * 模拟面的问答记录，按轮次累加（`documents/applications/<…>/interview_log.md`）。
    *
-   * **只读**：练习在 Claude Code 里进行（那里才有模型），面板负责回看。
+   * **只读**：练习在你那家 AI 编码工具里进行（那边才有模型），面板负责回看。
    * 回看的价值在于「上次哪几题答得含糊」——所以答案是**原话记录、不润色**，
    * 润色过的记录看着漂亮，回看时一点用没有。
    */
@@ -646,7 +646,7 @@ export interface NextStep {
   command?: string;
 }
 
-/** 一条命令：敲什么、干什么。来自 AGENTS.md 的工作流索引，不在前端写死。 */
+/** 一条命令：敲什么、干什么。来自 workflows/INDEX.md 的工作流索引表，不在前端写死。 */
 export interface CommandItem {
   /** workflow 名（= 文件名去掉 .md），用作 key */
   name: string;

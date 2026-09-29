@@ -37,7 +37,7 @@ job-expand（46）· job-add-template（45）**。**不是巧合，是同一个�
 2026-08-20 我在 `job-outcome` 写成「什么都没给」、`job-upskill` 写成「没给参数」、
 `job-interview` 又写成「没给参数」——**同一个错犯了三次**，三次都被那条测试顶红。
 **正确的修法是改措辞去对齐，不是放宽正则**：那条正则守的正是「裸命令的行为要写清楚」，
-为了让翻译过关去放宽它，等于把守卫拆了。同类还有 `AGENTS.md` 索引第四列的「不给参数时」。
+为了让翻译过关去放宽它，等于把守卫拆了。同类还有 `workflows/INDEX.md` 索引第四列的「不给参数时」。
 
 **② 数据值不许翻。** 写进 CSV / JSON 的状态码与判定码是**契约**：
 `applied` / `in_progress` / `hired` / `rejected` / `no response` / `offer declined` /
@@ -68,10 +68,15 @@ job-expand（46）· job-add-template（45）**。**不是巧合，是同一个�
 """
 
 import re
+import sys
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tools"))
+
+import _entries  # noqa: E402  （只用来取「哪些是生成的壳」这份名册）
+
 WF = ROOT / "workflows"
 
 CJK = re.compile("[一-鿿]")
@@ -92,7 +97,14 @@ CJK = re.compile("[一-鿿]")
 #: 翻 `job-outcome.md` 时有一条额外的纪律：**状态码是写进 CSV 的数据值，一个都不许翻**
 #: （`applied` / `in_progress` / `hired` / `rejected` / `no response` /
 #: `offer declined` / `interview_only` / `withdrawn`）。翻完逐个数过，一个不少。
+#:
+#:   INDEX.md        —— 实测 **0**（2026-09-29 建档当日复算）：索引表第三列的英文本来就该是
+#:                      **要照着敲的原文**（`/job-scrape broad`、`--no-rank` 这类），
+#:                      它们全在反引号里，判据的 `_CODE` 一步就把它们剥掉。留数 0 不是
+#:                      「碰巧」，是**上限**：哪天有人把命令原文翻成中文、或把反引号剥了
+#:                      写进散文，这一格先红——那时候修的是正文，不是这张表。
 BUDGET = {
+    "INDEX.md": 0,
     "job-add-portal.md": 0,
     "job-add-template.md": 0,
     "job-apply.md": 0,
@@ -382,7 +394,12 @@ def _walk_lines_outside_fences(text: str):
 #:
 #: **这条例外只对「同一张表里同类的匹配串」成立。** 散文一个字都没多 ——
 #: 那才是这个棘轮真正拦的东西。
+#:
+#:   INDEX.md        —— 实测 **0**：索引表里要照敲的英文（`/job-scrape broad`、`health`
+#:                      这类）全在反引号里，`_prose_only` 一步就剥掉，凑不出 ≥5 个连续词。
+#:                      留数 0 同样是上限不是巧合——翻了，或把反引号剥了，这一格先红。
 RUN_BUDGET = {
+    "INDEX.md": 0,
     "job-add-portal.md": 0,
     "job-add-template.md": 1,
     "job-apply.md": 2,
@@ -426,17 +443,38 @@ RUN_BUDGET = {
 #:   AGENTS.md         —— 被当作**反面例子引用**的那串英文码（SCRAPE / RANK / …）
 #:   SETUP.md          —— 字体名 ×2，以及 Chrome 界面上那个复选框的**英文原文**
 #:                        （用户要照着它在浏览器里找，翻了反而找不到）
+#:                        2026-09-29 Task 9 往 §7 粘了一段要照着粘的 agy 权限片段，
+#:                        留数**没动**（实测仍是 3）：那一段在 ```text 围栏里，
+#:                        而 `english_runs` 只数围栏外的散文。要让它进计数器，
+#:                        先得把围栏请掉 —— 那也正是这段该继续待在围栏里的理由。
 #:   resume/ cover_letter/ README —— 字体名
 DOC_RUN_BUDGET = {
-    ".claude/skills/job-application-assistant/SKILL.md": 1,
-    ".claude/skills/job-scrape/SKILL.md": 2,
-    ".claude/skills/job-upskill/SKILL.md": 1,
     ".github/PULL_REQUEST_TEMPLATE.md": 1,
     "AGENTS.md": 1,
     "SETUP.md": 3,
     "cover_letter/README.md": 1,
     "resume/README.md": 1,
 }
+
+#: 技能壳：每份恰好一段英文，就是 `allowed-tools:` 那一行 —— 那是**契约值**
+#: （权限串），正是这张表的说明里「可以留」三类中的第一类。
+#:
+#: 原来这里是三个壳名手写的（job-scrape 还写着 2，因为它带着两段解释散文）。
+#: 2026-09-29 `tools/gen_entries.py` 把 21 条命令的壳同时落到 `.claude/` 与
+#: `.agents/` 两处之后，手写名册只有两个下场：留着 → 40 份新壳全按预算 0 报，
+#: 而红的理由是**生成器正常工作**；把它们一份份抄进表 → 又一处会与正本飘的抄件
+#: （`AGENTS.md`「一条规则只贴在一个写手身上」）。名册因此改读
+#: `_entries.shell_names()`，预算仍是 1，判据一条没松：
+#: 壳里真多出散文英文（比如有人手工改了一份生成壳又没跑生成器），
+#: 2 > 1 当场红，而 `tests/test_generated_entries_are_current.py` 也会一起红。
+#:
+#: 只登记**盘上存在**的那些：`.agents/` 那一份在 Task 4 入库前不跟随 clone，
+#: 给不存在的路径留数就是 `test_the_budget_names_no_ghost` 要抓的幽灵。
+for _fam in _entries.SHELL_FAMILIES:
+    for _name in _entries.shell_names():
+        _rel = f"{_fam}/skills/{_name}/SKILL.md"
+        if (ROOT / _rel).is_file():
+            DOC_RUN_BUDGET[_rel] = 1
 
 
 def _shipped_markdown():

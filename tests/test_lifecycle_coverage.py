@@ -15,33 +15,40 @@ Step 5d/5e 只做机械校验（页数/孤行/乱码/文本层）。而 Step 5 �
 
 ## 这个文件钉住什么
 
-不是「命令存在」——那太弱。钉的是**接线完整**（工作流 ↔ stub ↔ 索引 ↔ 上游
+不是「命令存在」——那太弱。钉的是**接线完整**（工作流 ↔ 两族壳 ↔ 索引 ↔ 上游
 指路）与**各自的底线规则**。本仓库反复出现「写了没接线」，光有文件等于没有。
 """
 
 import re
+import sys
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 WF = ROOT / "workflows"
-CMD = ROOT / ".claude" / "commands"
-AGENTS = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+sys.path.insert(0, str(ROOT / "tools"))
+import _entries  # noqa: E402  两族目录名的正本在派生器里，这里不另抄一份
 
 
 class EveryWorkflowIsReachable(unittest.TestCase):
     """写了工作流不接线 = 没人知道它存在。这是本仓库最常见的一类漏。"""
 
-    def skill_triggered(self):
-        """由 skill 壳触发、不走 slash 命令的工作流——**从盘上推，不写手工清单**。
+    def skill_shells(self, fam):
+        """一族里的**命令壳**目录名 —— 从盘上推，不写手工清单。
 
         原来这里是 `{"scrape", "upskill"}` 一张写死的表，注释还写着「目录名与工作流名
         不必相同」。命令统一加 job- 前缀后两边同名了，表退化成恒等映射；留着的唯一
         效果是下次加壳时忘了登记，然后收到「这个工作流没有入口」的假报警。
         `lint_skills.check_workflow_layout` 同一处也是这么改的——两边都按同名接线。
+
+        剔掉渠道技能（判据：有 `cli/src/cli.ts`）：它只装在 `.agents` 族，也不是命令入口。
         """
-        return {p.parent.name for p in
-                (ROOT / ".claude" / "skills").glob("*/SKILL.md")}
+        out = set()
+        for p in (ROOT / fam / "skills").glob("*/SKILL.md"):
+            if (p.parent / "cli" / "src" / "cli.ts").is_file():
+                continue
+            out.add(p.parent.name)
+        return out
 
     def test_the_scan_reaches_the_workflows(self):
         """对照用例：扫描真的够到了文件 —— 否则同文件里那些「没问题」是恒绿的。
@@ -58,32 +65,40 @@ class EveryWorkflowIsReachable(unittest.TestCase):
             f"只扫到 {len(found)} 个工作流 —— 判据大概是够不到文件了，"
             "而不是仓库真的只剩这么几个")
 
-    def test_each_workflow_has_a_stub_or_a_skill(self):
-        wf = {p.stem for p in WF.glob("*.md")}
-        stubs = {p.stem for p in CMD.glob("*.md")}
-        missing = sorted(wf - stubs - self.skill_triggered())
-        self.assertEqual(missing, [],
-                         f"这些工作流既没有 slash 命令也不由 skill 触发：{missing}")
+    def test_each_workflow_has_a_shell_in_both_families(self):
+        """每条工作流在两族**各**有一份壳。
 
-    def test_no_stub_points_at_a_missing_workflow(self):
-        wf = {p.stem for p in WF.glob("*.md")}
-        stubs = {p.stem for p in CMD.glob("*.md")}
-        self.assertEqual(sorted(stubs - wf), [], "有 stub 指向不存在的工作流")
+        原来这条查的是「stub 或 skill 有其一」，那层二选一随 19 份命令 stub 一起删了。
+        分族核不是形式主义：只生成一族 = Claude 侧能用、其余各家敲不到，而那种半坏
+        状态在「任一族有就算过」的写法下是绿的。
+
+        （同一段还曾有两条按 stub 查的：「stub 不许指向不存在的工作流」与「stub 不许
+        超过 5 行」。它们的对象一起消失了 —— 目录空了之后循环零次、断言恒真，正是本
+        文件上面那条对照用例点名的「扫不到文件时，『没有问题』和『没有检查』长得一样」。
+        前者的判据落在 `tests/test_docs_accuracy.py` 的
+        `test_shell_name_matches_its_workflow`（两族都查，且不依赖 lint），后者由
+        `tools/lint_skills.py` 的残留 stub 探测器接管，比它更硬：那个目录里**有**文件
+        就是失败，不必再数它几行。）
+        """
+        wf = {p.stem for p in WF.glob("*.md") if p.stem != "INDEX"}
+        self.assertGreaterEqual(len(wf), 15, "workflows/ 像是没扫到")
+        for fam in _entries.SHELL_FAMILIES:
+            shells = self.skill_shells(fam)
+            self.assertGreaterEqual(len(shells), 21,
+                                    f"{fam}/skills 只扫到 {len(shells)} 份壳，"
+                                    "下面那条会是恒绿的空判据")
+            missing = sorted(wf - shells)
+            self.assertEqual(missing, [],
+                             f"{fam}/skills 缺这些工作流的壳，那一家的用户敲不到：{missing}")
 
     def test_each_workflow_is_in_the_index(self):
-        """AGENTS.md 的索引是 AI 进入这个仓库的唯一目录。"""
-        wf = {p.stem for p in WF.glob("*.md")}
-        indexed = set(re.findall(r"workflows/([a-z-]+)\.md", AGENTS))
+        """`workflows/INDEX.md` 的索引表是 AI 进入这批工作流的唯一目录
+        （2026-09-29 从 AGENTS.md 搬过来，AGENTS.md 只留指针）。"""
+        index = (ROOT / "workflows" / "INDEX.md").read_text(encoding="utf-8")
+        wf = {p.stem for p in WF.glob("*.md") if p.stem != "INDEX"}
+        indexed = set(re.findall(r"workflows/([a-z-]+)\.md", index))
         self.assertEqual(sorted(wf - indexed), [],
-                         "这些工作流没进 AGENTS.md 的索引，AI 不会知道它们存在")
-
-    def test_stubs_stay_thin(self):
-        """stub 只负责指路。内容写进 stub 会和工作流正文飘。"""
-        for p in sorted(CMD.glob("*.md")):
-            with self.subTest(cmd=p.stem):
-                self.assertLessEqual(
-                    len([l for l in p.read_text(encoding="utf-8").splitlines() if l.strip()]),
-                    5, f"{p.name} 太长了 —— stub 应该只有标题和一句「读取并执行」")
+                         "这些工作流没进 workflows/INDEX.md 的索引，AI 不会知道它们存在")
 
 
 class ResumeAuditExistsAndKnowsItsLimits(unittest.TestCase):

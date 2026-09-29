@@ -18,9 +18,11 @@
 - 如果用户输入包含 `--list`：用 Glob 匹配 `.agents/skills/*/SKILL.md`，打印一张
   已安装 portal 技能的表格（名称、从描述里提取的覆盖市场、`url-reference.md` 里的数据
   来源），然后结束。
-  **只列有 `.agents/skills/*/cli/src/cli.ts` 的那几个。** 同一层还放着三份自动触发用的技能壳
-  （`job-application-assistant` / `job-scrape` / `job-upskill`），它们不是渠道 ——
-  没有 CLI、也没有 `url-reference.md`，列出来就是三行空表格（2026-08-31 实测）。
+  **只列有 `.agents/skills/*/cli/src/cli.ts` 的那几个。** 同一层还放着命令的技能壳
+  （`job-application-assistant` 那份手写的路由壳，加上 `tools/gen_entries.py`
+  按这张索引生成的那一批），它们不是渠道 ——
+  没有 CLI、也没有 `url-reference.md`，列出来就是一堆空表格（2026-08-31 实测时
+  是三份）。
 - 如果用户输入包含一个 URL：把它当作平台 URL，直接进入 Step 1。
 - 否则：从 Step 1 开始交互式提问。
 
@@ -81,9 +83,10 @@
      所以这里要说的是「**这家走浏览器那条路，不装 CLI 技能**」，
      而不是「这个平台接不了」——后者会让用户以为没辙，而仓库里恰好有现成的路。
    - **撞反爬或 WAF 挑战页（阿里云盾、极验、返回风控码）→ 同样落到第 2 层，
-     绝不绕过挑战。** 这条 `AGENTS.md` 写得很明确：BOSS 返回 `code:37`、
-     前程撞阿里云 WAF、智联端点 404——**这三家没有可用的免登录 API，
-     绕过 WAF 或反爬挑战不做**。为了凑「有 API」这一层去破解反爬，
+     绝不绕过挑战。** 禁令的正本在 `AGENTS.md`「取数渠道的顺位」（**这三家没有
+     可用的免登录 API，绕过 WAF 或反爬挑战不做**），逐家实测记录在
+     `workflows/reference/cdp-portals.md`「顺位的逐家实测」：BOSS 返回 `code:37`、
+     前程撞阿里云 WAF、智联端点 404。为了凑「有 API」这一层去破解反爬，
      换来的是封号和一条随时会碎的链路。
    - 如果 `robots.txt` 禁止相关路径，或者平台条款不允许自动化访问，如实告诉用户，
      由用户自己决定是否为个人使用继续。如果继续，生成的 `SKILL.md` **必须**带一段
@@ -143,8 +146,9 @@
 - **依赖：** 默认**零运行时依赖**（只用 `fetch` + 正则解析），照 `liepin-search` 的做法——
   `package.json` 的 `dependencies` 必须是空的，`install` 只拉开发期类型。只有平台的标记
   结构确实让分片正则解析吃不消时才引入解析库，并在 README 里说明原因。
-- **运行时：node 与 bun 都要能跑，且 node 是默认路径。** 用户装 Claude Code 时走
-  `npm install -g`，所以 Node 必然已存在；强制 Bun 等于凭空多加一个必装依赖。
+- **运行时：node 与 bun 都要能跑，且 node 是默认路径。** Node 在绝大多数机器上已经
+  有了，但别从「他用了哪家 AI 工具」反推（各家装法不一样），量一次 `node --version`
+  就行；强制 Bun 等于凭空多加一个必装依赖。
   做到这点只需守两条（`liepin-search` 就是这么写的）：
   - **相对 import 写 `.ts` 后缀**（tsconfig 开 `allowImportingTsExtensions`）。
     写 `.js` 的话 Node 不会映射回 `.ts`，直接 `ERR_MODULE_NOT_FOUND`。
@@ -206,19 +210,24 @@
    cd .agents/skills/<name>/cli && npm install && npx tsc --noEmit
    # 用 bun 的话：bun install && bun run typecheck
    ```
-2. 用用户的测试查询跑一次真实搜索（**用 node 跑，那是默认路径**）：
+2. 用用户的测试查询跑一次真实搜索（**用 node 跑，那是默认路径**）。
+   **在仓库根跑，路径写全**：上面刚批的那两条权限
+   （`Bash(node .agents/skills/<name>/cli/src/cli.ts:*)`）认的就是这个入口，
+   而先 `cd` 进 `cli/` 再用只到目录那一层的相对写法去敲它，匹配的是
+   「当前目录下碰巧叫 cli.ts 的那个文件」——批的是哪个文件，那条写法自己不知道：
    ```bash
-   node src/cli.ts search -q "<测试查询>" --limit 5 --format table
+   node .agents/skills/<name>/cli/src/cli.ts search -q "<测试查询>" --limit 5 --format table
    ```
-   **两个运行时都要过一遍**——`node src/cli.ts …` 与 `bun run src/cli.ts …` 结果应当一致。
+   **两个运行时都要过一遍**——`node .agents/skills/<name>/cli/src/cli.ts …` 与
+   `bun run .agents/skills/<name>/cli/src/cli.ts …` 结果应当一致。
    只在 bun 下验证，正是让「Node 用户一跑就崩」溜过去的那条缝
    （见上一节那两条 TS 语法约束，以及 `tests/test_cli_runtime_portability.py`）。
 3. 确认结果是真实、完整的：标题和公司名有内容（不是空字符串或 HTML 碎片），URL
    能打开且指向该平台，日期能正确解析。如果字段是 null 或乱码，回去修
    `helpers.ts` 里的解析器再跑一次，直到干净为止。
-4. 从结果里挑一个 `id` 跑一下 `detail`：
+4. 从结果里挑一个 `id` 跑一下 `detail`（同样在仓库根跑）：
    ```bash
-   node src/cli.ts detail <id> --format plain
+   node .agents/skills/<name>/cli/src/cli.ts detail <id> --format plain
    ```
    确认描述是可读文本（实体已解码、标签已剥离、保留了分段）。
 5. 跑一遍测试：`bun run test`（测试用 `bun:test`，这一步用 bun 是对的）。

@@ -158,7 +158,12 @@ class NoIndustryWordListsInTheJudgingCode(unittest.TestCase):
     #: **Claude Code 的能力名**（AGENTS.md 能力对照表里的一行），不是 AI 行业的
     #: 「智能体」。同字不同义，硬算进来就是误报。
     #: 下一条测试会验这个排除是不是真的成立。
-    DEV_SIDE = {"lint_skills.py", "security_guards.py"}
+    #:
+    #: `_entries.py` 是同一个字、同一回事：`BASE_TOOLS` 里那个 `"Agent"` 是它往
+    #: `allowed-tools:` 里写的**工具名**（AGENTS.md 能力表「并行子代理 → Agent tool」），
+    #: 不是它给任何岗位打的判断；它读的是 `workflows/` 与 `INDEX.md` 两份共享框架文件，
+    #: 一条个人数据都不碰 —— 正是下一条测试要验的前提。
+    DEV_SIDE = {"lint_skills.py", "security_guards.py", "_entries.py"}
 
     #: 判断层的标志：**去拼路径读**这些文件，而不是只提到文件名
     USER_DATA_FILES = ("candidate.md", "seen_jobs.json", "job_search_tracker.csv")

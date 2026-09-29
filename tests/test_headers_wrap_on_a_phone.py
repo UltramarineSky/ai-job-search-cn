@@ -132,8 +132,17 @@ class TheLongLinesCanBreak(unittest.TestCase):
              / "ResumeRead.tsx").read_text(encoding="utf-8")
 
     def test_the_restock_command_has_a_break_opportunity(self):
+        """钉的是**那条命令有没有断行的地方**，不是它包在哪个标签里。
+
+        原来这里写死 `<code>`。2026-09-30 那条命令改走 `<Cmd>`（上屏的命令必须
+        按当前工具改写形式，见 `test_every_command_on_screen_goes_through_the_adapter`），
+        形状一变这条就红了——而它守的那件事（窄屏断得开）其实没被破坏。
+        CONTRIBUTING「判据钉行为，不钉那一行代码长什么样」说的就是这个。
+        两种标签都认，断言仍然只有一条：命令里要有空格。
+        """
         i = self.RREAD.index("rread-open")
-        m = re.search(r"<code>([^<]+)</code>", self.RREAD[i:i + 900])
+        m = re.search(r"<(?:code|Cmd)[^>]*>([^<]+)</(?:code|Cmd)>",
+                      self.RREAD[i:i + 900])
         self.assertIsNotNone(m, "那条命令不见了")
         self.assertIn(" ", m.group(1),
                       f"命令里没有空格，窄屏断不开：{m.group(1)!r}")

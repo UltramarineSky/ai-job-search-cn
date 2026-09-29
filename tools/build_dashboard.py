@@ -1928,7 +1928,7 @@ def resolve_score(entry: dict, app) -> tuple:
 #: 那张表（那张表是给 AI 工具用的索引，加一列展示用的分组会污染它）。
 #: 但**成员资格必须完整**：漏掉一个，它就掉进「其它」里失去上下文。
 #: `tests/test_command_reference.py` 会检查 `workflows/*.md` 全部落在某个组里。
-#: 名字取自 `AGENTS.md` 索引里的 `workflows/<名>.md`，所以带 job- 前缀。
+#: 名字取自 `workflows/INDEX.md` 索引里的 `workflows/<名>.md`，所以带 job- 前缀。
 #: 漏一个不会报错，只会被归进「其它」——`test_command_reference` 盯着这件事。
 COMMAND_GROUPS = [
     ("开始之前", ["job-setup", "job-user"]),
@@ -1946,18 +1946,19 @@ COMMAND_GROUPS = [
 def _md_plain(x: str) -> str:
     """索引表里的 markdown 记号 → 纯文本。面板那几格不是 markdown。
 
-    `AGENTS.md` 的索引表本身是 markdown，`**所有**` 在那里是对的；而面板把这几格
+    `workflows/INDEX.md` 的索引表本身是 markdown，`**所有**` 在那里是对的；而面板把这几格
     当纯文本节点渲染，星号会原样上屏。同一份内容两种载体，转换点就在读进来这一下。
     """
     return re.sub(r"\*\*([^*\n]+)\*\*", r"\1", x).replace("`", "").strip()
 
 
 def parse_commands() -> list[dict]:
-    """从 `AGENTS.md` 的「工作流索引」表里读出全部命令。
+    """从 `workflows/INDEX.md` 的「工作流索引」表里读出全部命令。
 
     **不在前端写死这张表。** 写死必然跟索引飘：加一个工作流、改一句说明，
     面板还停在上一版，而用户没有任何理由怀疑面板漏了东西。索引是权威来源
-    （AGENTS.md 自己就是这么写的），这里只做展示层的分组。
+    （正本就在 `workflows/INDEX.md`，`AGENTS.md` 那一节只剩指向这里的指针），
+    这里只做展示层的分组。
 
     表长这样：
 
@@ -1976,11 +1977,11 @@ def parse_commands() -> list[dict]:
     每个命令的说明，适合后期进阶」——脊梁那几条给新手，这一列给进阶。）
     （脊梁是几条以 `AGENTS.md`「一次跑到头」为准，此刻三条：setup / auto / outcome。）
     """
-    src = REPO_ROOT / "AGENTS.md"
+    src = REPO_ROOT / "workflows" / "INDEX.md"
     if not src.is_file():
         return []
     text = src.read_text(encoding="utf-8", errors="replace")
-    # 锚到「工作流索引」这一节，别把「内部词 → 给用户看时说」那张表也吃进来
+    # 锚到「工作流索引」这一节，别把文件开头那段「谁是正本」的引言也吃进来
     m = re.search(r"^##\s*工作流索引\s*$(.*?)(?=^##\s|\Z)", text, re.S | re.M)
     if not m:
         return []

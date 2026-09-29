@@ -42,7 +42,7 @@ class DefaultIsFullCoverage(unittest.TestCase):
 
     def test_broad_now_means_ignore_the_pruning(self):
         self.assertIn("连实测已挖空、已判低效的词也重跑", WF)
-        idx = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        idx = (ROOT / "workflows" / "INDEX.md").read_text(encoding="utf-8")
         self.assertIn("连上轮没产出的词也重抓一遍", idx,
                       "索引里 broad 的说明还是旧的（面板帮助就是它）")
 

@@ -149,7 +149,7 @@ class ABareExclusionFailIsAFinding(unittest.TestCase):
 
 class TheRuleReallySaysThat(unittest.TestCase):
     """**现拿规格原文来对。** 引一条不存在的规则，这个仓库栽过一次
-    （「规则真、出处假」，`AGENTS.md` 记着）。"""
+    （「规则真、出处假」，事故记在 `docs/why/guidance.md`）。"""
 
     def test_the_spec_line_exists(self):
         t = (ROOT / "workflows" / "reference" / "04-job-evaluation.md").read_text(

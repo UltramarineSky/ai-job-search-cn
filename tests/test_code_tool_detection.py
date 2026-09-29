@@ -2,11 +2,14 @@
 """宿主 AI 编码工具探测 + doctor 输出的命令形式适配。
 
 为什么有这些断言：
-- 探测信号全是对真实安装取证来的（2026-09-12）：Claude Code 注入
-  `CLAUDECODE=1`（不是 `CLAUDE_CODE` / `CLAUDE`，那两个从没存在过）、
-  agy 注入 `ANTIGRAVITY_AGENT=1`、Gemini CLI 给子 shell 注入 `GEMINI_CLI=1`。
+- 探测信号全是对真实安装取证来的（2026-09-12 起，逐家复核到 2026-09-30）：
+  Claude Code 注入 `CLAUDECODE=1`（不是 `CLAUDE_CODE` / `CLAUDE`，那两个从没存在过）、
+  agy 注入 `ANTIGRAVITY_AGENT=1`、Qoder 注入 `QODERCN_CLI=1` /
+  `QODER_AGENT_SDK_ENTRYPOINT=sdk-ts`（2026-09-29 在一个真 Qoder CN 会话里现测）、
+  Qwen Code 注入 `QWEN_CODE=1`、MiMo Code 注入 `MIMOCODE=1`
+  （后两家出处见 `_cli.detect_code_tool` 的 docstring）。
   上一版因为信号是凭空写的，真 Claude Code 会话被认成 generic，整个面板
-  默认变成免斜杠。所以下面专门有一组断言「假信号不许触发」。
+  默认变成免斜杠。所以下面专门有一组断言「不该再认的信号不许触发」。
 - doctor 因「只用标准库、不 import 仓库模块」的契约保着一份逐字副本
   （见 doctor.detect_code_tool 的 docstring），这份测试同时钉两份。
 """
@@ -14,6 +17,7 @@
 import contextlib
 import io
 import os
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -29,8 +33,18 @@ TOOL_ENV = (
     "JOBS_CODE_TOOL",
     "ANTIGRAVITY_AGENT", "ANTIGRAVITY_AGENTAPI_EXE", "ANTIGRAVITY_LS_VERSION",
     "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT",
-    # 下面是上一版凭空写、实测不存在的假信号 —— 留着专门验「它们不再触发」。
+    # Qoder：跑在 Qoder 里时这两个**就在环境里**，不列进来下面的用例会
+    # 被宿主会话污染（`({}, "generic")` 那条会当场红）。
+    "QODERCN_CLI", "QODER_AGENT_SDK_ENTRYPOINT",
+    "QWEN_CODE", "MIMOCODE",
+    # 下面两组都「不许再认」，但**理由不同，别混成一档**：
+    # 1) 上一版凭空写、实测根本不存在的假信号 —— 留着验它们不再触发。
     "CLAUDE_CODE", "CLAUDE", "CURSOR_VERSION", "TERM_PROGRAM", "CODEX",
+    # 2) `GEMINI_CLI` 是**真信号**（Gemini CLI 确实注入过它），只是那家工具
+    #    已停：官方把个人版登录通道关了（`reasonCode: UNSUPPORTED_CLIENT` /
+    #    `tierId: free-tier`），后继是 Antigravity CLI（用户 2026-09-30 告知）。
+    #    探测认它没有意义 —— 认出来也只是给一个装不上的工具印名字，
+    #    所以整档删掉，它落回 generic（去斜杠，而 generic 那档本来就兜得住）。
     "GEMINI_CLI",
 )
 
@@ -74,7 +88,13 @@ SCENARIOS = [
     ({"ANTIGRAVITY_LS_VERSION": "1"}, "antigravity"),
     ({"CLAUDECODE": "1"}, "claude"),
     ({"CLAUDE_CODE_ENTRYPOINT": "cli"}, "claude"),
-    ({"GEMINI_CLI": "1"}, "gemini"),
+    ({"QODERCN_CLI": "1"}, "qoder"),
+    ({"QODER_AGENT_SDK_ENTRYPOINT": "sdk-ts"}, "qoder"),
+    ({"QWEN_CODE": "1"}, "qwen"),
+    ({"MIMOCODE": "1"}, "mimo"),
+    # 在 Qoder 的终端里再开 Claude Code：两家信号同时在，Claude 赢
+    # （优先级问题，不是形式问题——两家现在实测都吃斜杠，见 COMMAND_SYNTAX）。
+    ({"CLAUDECODE": "1", "QODERCN_CLI": "1"}, "claude"),
     # 旧版虚构信号 —— 一个都不许再认。
     ({"CLAUDE_CODE": "1"}, "generic"),
     ({"CLAUDE": "1"}, "generic"),
@@ -82,6 +102,9 @@ SCENARIOS = [
     ({"TERM_PROGRAM": "cursor"}, "generic"),
     ({"TERM_PROGRAM": "vscode"}, "generic"),
     ({"CODEX": "1"}, "generic"),
+    # Gemini CLI 已停（真信号，但工具没了）—— 与上面那组假信号理由不同，
+    # 所以单列一条：它**曾经**判 gemini，现在整档删掉，落 generic。
+    ({"GEMINI_CLI": "1"}, "generic"),
 ]
 
 
@@ -114,10 +137,11 @@ class TestCodeToolDetection(unittest.TestCase):
             self.assertEqual(_cli.detect_code_tool(), "cursor")
             self.assertEqual(doctor.detect_code_tool(), "cursor")
 
-    # ---- adapt_commands：非 Claude 环境去斜杠，Claude 原样 ----
+    # ---- adapt_commands：认不出来的那一档去斜杠，实测吃斜杠的那几家原样 ----
 
-    def test_adapt_strips_slash_everywhere_except_claude(self):
-        for tool in ("antigravity", "gemini", "generic", "cursor"):
+    def test_adapt_strips_slash_only_for_the_unverified_group(self):
+        # 「codex 那一档靠默认值兜」另有专门的用例，这里不重复钉。
+        for tool in ("generic", "cursor"):
             with self.subTest(tool=tool):
                 self.assertEqual(
                     doctor.adapt_commands("跑 /job-auto 接着抓", tool),
@@ -136,10 +160,12 @@ class TestCodeToolDetection(unittest.TestCase):
                 self.assertEqual(
                     doctor.adapt_commands("https://x//job-auto", tool),
                     "https://x//job-auto")
-        # Claude Code：一切原样。
-        self.assertEqual(
-            doctor.adapt_commands("跑 /job-auto 接着抓", "claude"),
-            "跑 /job-auto 接着抓")
+        # 实测吃斜杠的五家：一切原样（剥掉就是白退回裸形式）。
+        for tool in ("claude", "antigravity", "mimo", "qoder", "qwen"):
+            with self.subTest(tool=tool):
+                self.assertEqual(
+                    doctor.adapt_commands("跑 /job-auto 接着抓", tool),
+                    "跑 /job-auto 接着抓")
 
     def test_adapt_passes_non_string_through(self):
         self.assertIs(doctor.adapt_commands(None, "generic"), None)
@@ -151,25 +177,60 @@ class TestCodeToolDetection(unittest.TestCase):
             rc = doctor.main([])
         return rc, buf.getvalue()
 
-    def test_main_antigravity_has_no_slash_commands_left(self):
+    def test_main_antigravity_keeps_the_slash_form(self):
         rc, out = self._run_main("antigravity")
         self.assertEqual(rc, 0)
-        # 全文任何位置都不许漏出 /job- 记号（脚注也不例外）。
-        self.assertNotRegex(out, doctor._SLASH_CMD)
-        self.assertIn("Antigravity", out)
-        self.assertNotIn("去掉开头的斜杠", out)  # 旧脚注：让用户自己翻译
+        # agy 的 `/` 面板就是技能列表（用户 2026-09-28 当场测过 `/job-scrape`），
+        # 所以这一档给斜杠。
+        self.assertRegex(out, doctor._SLASH_CMD)
+        self.assertIn("已识别为 Antigravity", out)
+        self.assertNotIn("不带开头斜杠", out)
 
-    def test_main_generic_footnote_keeps_claude_example_slash(self):
+    def test_main_generic_output_is_slash_free(self):
         _rc, out = self._run_main("generic")
-        # 全文只剩脚注里那一条示范 Claude Code 写法的 /job-auto，
-        # 它必须活着穿过剥离流；正文里的命令全部已去斜杠。
-        self.assertEqual(doctor._SLASH_CMD.findall(out), ["job-auto"])
-        self.assertIn("用 Claude Code 时带斜杠", out)
-
-    def test_main_claude_has_no_adaptation_footnote(self):
-        _rc, out = self._run_main("claude")
-        self.assertNotIn("💡 已识别", out)
+        # 整份输出一种形式到底：连脚注也不示范别家的写法。原来那条要列出
+        # 「用 Claude Code 时带斜杠（如 /job-auto）」——那是把两套说法摊给
+        # 一个只该看到一套的人。
+        self.assertNotRegex(out, doctor._SLASH_CMD)
+        self.assertIn("不带开头斜杠", out)
         self.assertNotIn("用 Claude Code 时带斜杠", out)
+
+    def test_main_says_which_tool_it_thinks_it_is_for_everyone(self):
+        """这一行每家都印 —— 探测错了的唯一线索。
+
+        原来只有去斜杠那几家印，吃斜杠的那几家什么也不说 —— 而探测错的人恰恰
+        多半落在那一边，输出里找不到任何线索，`JOBS_CODE_TOOL` 那条手工纠正
+        正是给他准备的。
+
+        **名单从 `COMMAND_SYNTAX` 数，不比手抄** —— 那张表的键与探测函数源码里的
+        `return` 字面量逐条对拍（正本在
+        `tests/test_slash_survives_where_the_palette_is_the_skill_list.py`），
+        所以给探测加一档而忘了给它一个名字 → 这里当场红。`generic` 不在
+        `_TOOL_LABELS` 里是设计：认不出来时印的是另一句（「没认出你在用哪家助手」）。
+        """
+        for tool in sorted(set(doctor.COMMAND_SYNTAX) - {"generic"}):
+            with self.subTest(tool=tool):
+                label = doctor._TOOL_LABELS.get(tool)
+                self.assertTrue(label, f"{tool} 探测得出来却没有名字可印")
+                _rc, out = self._run_main(tool)
+                self.assertIn(f"已识别为 {label}", out)
+                self.assertIn("JOBS_CODE_TOOL=", out, "认错了得知道怎么纠正")
+
+    def test_the_manual_override_hint_lists_every_detectable_tool(self):
+        """脚注那串 `JOBS_CODE_TOOL=a|b|c` 得跟探测的档位同步。
+
+        这串在 `doctor.py` 里是从 `COMMAND_SYNTAX` 派生的，所以**期望值必须在这里
+        写死** —— 拿 `set(doctor.COMMAND_SYNTAX)` 去比它就是自己比自己，永远绿。
+        写死之后：探测加一档 → `COMMAND_SYNTAX` 少格子先红（正本在另一份测试文件），
+        表里加了格而派生串漏了名字 → 这里红。
+        codex / cursor 不在里面是设计：它们探测不出来，而手工指定也不改变命令形式
+        （默认档就是去斜杠），列出来只是多两个敲了没区别的值。
+        """
+        _rc, out = self._run_main("generic")
+        hint = next(line for line in out.splitlines() if "JOBS_CODE_TOOL=" in line)
+        listed = set(re.findall(r"[a-z]+", hint.split("JOBS_CODE_TOOL=", 1)[1]))
+        self.assertEqual(listed, {"claude", "antigravity", "mimo",
+                                  "qoder", "qwen", "generic"})
 
 
 if __name__ == "__main__":

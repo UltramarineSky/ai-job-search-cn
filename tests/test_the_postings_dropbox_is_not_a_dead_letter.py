@@ -126,10 +126,15 @@ class StillNothingSilentlyReadsIt(unittest.TestCase):
     """哪天真加了自动扫，这条会红 —— 那时 README 那段话要跟着改，别放它过去。"""
 
     #: 碰它是应该的那几处：建、删、排除、忽略、以及这次新加的两处说明。
+    #: `INDEX.md`（2026-09-29 起）——索引表 job-expand 行那句「`postings/` 里的职位
+    #: 描述不扫」原来是 `AGENTS.md` 正文，这段的 grep 只扫 `tools/` 与 `workflows/`
+    #: 所以从没数过它；表搬进 workflows/ 后它第一次被扫到。**它是复述豁免，不是读取方**
+    #: ——登记进这份名单等于沿用 `job-expand.md` 的同款豁免，判据没松。
     _EXPECTED = ("job-setup.md", "job-reset.md", "job-expand.md",
                  "security_guards.py", "README.md", "job-apply.md",
                  "test_enum_consistency.py", "test_expand_says_what_to_put_where.py",
                  "test_where_to_put_your_resume.py", "test_security_guards.py",
+                 "INDEX.md",
                  pathlib.Path(__file__).name)
 
     def test_no_new_consumer_appeared_unannounced(self):

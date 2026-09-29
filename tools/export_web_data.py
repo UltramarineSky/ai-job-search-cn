@@ -4630,7 +4630,7 @@ def main(argv=None, *, show_next_step=True) -> int:
         # 全部命令。面板只露过 18 个工作流里的 7 个——`/job-outcome`（投完记录结果）、
         # `/job-offer`、`/job-upskill` 连提都没提过。而这个仓库的判断力全在命令行侧，
         # 面板不说出命令，用户就只能靠翻文档才知道自己还能做什么。
-        # 从 AGENTS.md 的索引解析，不在前端写死（写死必然跟索引飘）。
+        # 从 workflows/INDEX.md 的索引解析，不在前端写死（写死必然跟索引飘）。
         "commands": parse_commands(),
         "detectedTool": _cli.detect_code_tool(),
         # 这个 clone 下有哪些用户。面板原来只知道「当前是谁」，于是那个
@@ -4695,7 +4695,7 @@ def main(argv=None, *, show_next_step=True) -> int:
         #    要原样带走的东西，断开就等于让人怀疑自己看漏了。
         # 2. **它不能直接粘。** 用户站在总览页上，手里没有职位链接；
         #    复制走还得先把尖括号改掉。而这三条**不给参数都是有意义的**
-        #    （见 AGENTS.md 工作流索引第四列：apply 给「可以投」那档全部出材料、
+        #    （见 workflows/INDEX.md 工作流索引第四列：apply 给「可以投」那档全部出材料、
         #    outcome 列出还在跑的投递、interview 列出约了面试的）——
         #    也正是站在这一页的人最可能想要的那个动作。
         #

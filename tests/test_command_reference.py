@@ -10,7 +10,7 @@
 
 **① 面板只露过 18 个工作流里的 7 个。** `/job-outcome`（投完记录结果，投递之后最该做的
 一件事）、`/job-offer`、`/job-upskill`、`/job-expand` 连提都没提过。它们各自有完整的工作流文件、
-有命令 stub、有测试——唯独在界面上查无此人。
+两族各一份技能壳（那时还是命令 stub）、有测试——唯独在界面上查无此人。
 
 **② 拿到 offer 的岗，下一步给的是 `/job-interview`。** `job_next_step` 把 offer 和
 interview 合成一个分支。拿到 offer 之后该做的是算可守区间、过背调红线、和别的
@@ -24,8 +24,9 @@ offer 比——那是 `/job-offer`。这一步给错，用户会在最该谈钱�
 
 ## 规则
 
-1. 面板要有一块**命令总览**，来自 `AGENTS.md` 的索引（不在前端写死）
-2. `workflows/*.md` 每一个都要在总览里出现，且落在某个**有意义的**分组里
+1. 面板要有一块**命令总览**，来自 `workflows/INDEX.md` 的索引（不在前端写死）
+2. `workflows/` 下每一个**命令工作流**都要在总览里出现，且落在某个**有意义的**分组里
+   （`INDEX.md` 本身是索引正本，不是命令，不进这条名单）
 3. 每个岗的「下一步」文案都要带命令（除非已结案）
 """
 
@@ -53,14 +54,17 @@ class TheCommandListComesFromTheIndex(unittest.TestCase):
     def test_every_workflow_is_listed(self):
         groups = ex.parse_commands()
         listed = {it["name"] for g in groups for it in g["items"]}
-        have = {p.stem for p in (ROOT / "workflows").glob("*.md")}
+        # INDEX.md 是索引正本自己，不是一条命令——面板上没有「/INDEX」这个东西，
+        # 它也不该出现在索引表里（2026-09-29 索引表搬进 workflows/ 那天起）。
+        have = {p.stem for p in (ROOT / "workflows").glob("*.md") if p.stem != "INDEX"}
         self.assertEqual(sorted(have - listed), [],
                          "这些工作流在面板上查无此人，用户不会知道它们存在")
 
     def test_nothing_is_listed_that_does_not_exist(self):
         groups = ex.parse_commands()
         listed = {it["name"] for g in groups for it in g["items"]}
-        have = {p.stem for p in (ROOT / "workflows").glob("*.md")}
+        # 同上一条：INDEX 是索引正本，不是可列的命令
+        have = {p.stem for p in (ROOT / "workflows").glob("*.md") if p.stem != "INDEX"}
         self.assertEqual(sorted(listed - have), [],
                          "面板列了不存在的命令，照着敲会撞空")
 

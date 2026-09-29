@@ -19,8 +19,10 @@
 > `.active_user` 文件里，由 `/job-setup` 首次创建、`/job-user` 切换。
 >
 > **例外**：`resume/template.typ`、`cover_letter/template.typ`、`resume/example.typ`、
-> `templates/README.md`、`documents/README.md` 这几个是**全用户共享的框架文件**，
-> 就在仓库根，不按用户解析。
+> `templates/README.md`、共享模板库 `templates/cv/` 与 `templates/cover_letters/`、
+> `documents/README.md`——这几个是**全用户共享的框架文件**，就在仓库根，不按用户解析。
+> （这条枚举的**正本在 `AGENTS.md`「活动用户与多用户」**。这里是抄给读本文的人看的，
+> 要加新的共享条目，先加到正本。）
 >
 > 所以：`users/` 目录在你跑 `/job-setup` 之前是空的，`resume/` 下只有模板和示例——
 > **这是正常的**，不是 clone 出了问题。
@@ -38,17 +40,29 @@
 |---|---|---|
 | **① 必装** | **一个能读 `AGENTS.md` 并执行工作流的 AI 编码工具** + **Node 22.18+**（见下方「运行时」一节） | 填资料 `/job-setup`、**搜职位 `/job-scrape`**、**打分排序 `/job-rank`**、面试准备 `/job-interview`、记投递 `/job-outcome`、学习计划 `/job-upskill`、切换用户 `/job-user` |
 | **② 要出简历 PDF 就装** | Typst（中文字体一般已自带） | `/job-apply` 编译 PDF（不装只给 `.typ` 源文件） |
-| **③ 强烈建议装** | Python 3.10+（流水线全程只用标准库） | `/job-dashboard` 总览页；**以及 `/job-rank` 的预筛淘汰、`/job-scrape` 的 JD 详情库、`/job-outcome` 的催进度判定、`/job-upskill` 的缺口分格、`/job-add-template` 的模板撞名检查、`/job-auto` 的词表写回、`/job-refresh` 的刷新记录、以及 `/job-rank`/`/job-outcome`/`/job-gmail-sync`/`/job-interview`/`/job-user`/`/job-cv`/`/job-reset`/`/job-scrape --no-rank` 收尾刷新面板数据**——这几条命令没有它仍能跑，但各少一环（`/job-rank` 不做淘汰、每轮重抓 JD）。另外仓库自带的四个检查脚本也用它 |
+| **③ 强烈建议装** | Python 3.10+（流水线全程只用标准库） | `/job-dashboard` 总览页；**以及 `/job-setup` 重跑「改搜索词」那节时先读每个词抓过的真实战绩（抓到多少岗、哪几个跑偏）、`/job-rank` 的预筛淘汰、`/job-scrape` 的 JD 详情库、`/job-outcome` 的催进度判定、`/job-upskill` 的缺口分格、`/job-add-template` 的模板撞名检查、`/job-auto` 的词表写回、`/job-refresh` 的刷新记录、以及 `/job-rank`/`/job-outcome`/`/job-gmail-sync`/`/job-interview`/`/job-user`/`/job-cv`/`/job-reset`/`/job-scrape --no-rank` 收尾刷新面板数据**——这几条命令没有它仍能跑，但各少一环（`/job-rank` 不做淘汰、每轮重抓 JD；`/job-setup` 改词时没战绩可看，只能自己想）。另外仓库自带的四个检查脚本也用它 |
 | ④ 可选 | poppler（提供 `pdftotext` 与 `pdftoppm`） | 简历 PDF 的文本层校验与视觉检查（不装则跳过并说明；两个都在 poppler 里，一条安装命令带齐） |
 | ⑤ 可选·进阶 | 能开浏览器的 AI 工具（Claude Code 装 Claude 浏览器扩展即可） | BOSS 直聘 / 智联 / 前程无忧（没有则退 `site:` 兜底）。见 3.1 |
 | ⑥ 可选·进阶 | Gmail / Notion MCP 连接器 | `/job-gmail-sync`、`/job-notion-sync`（不装则整体跳过） |
 | ⑦ 只有改 CLI 代码才需要 | Bun | 跑 `bun test`（CLI 的单元测试）。日常使用完全不需要 |
 
 > **本仓库不绑定单一 AI 工具**（README 也是这么说的）：Claude Code、Codex CLI、
-> Gemini CLI、Cursor 都能用，入口都是 `AGENTS.md`。**本文的示例按 Claude Code 写**
-> ——它是唯一开箱就有 `/job-setup`、`/job-apply` 这些斜杠命令的（仓库自带 `.claude/commands/`）；
-> 其它工具直接按 `AGENTS.md` 的「工作流索引」读取并执行对应文件，效果一样，
-> 只是要自己说「按 workflows/job-apply.md 做」而不是敲 `/job-apply`。
+> Antigravity CLI (agy)、Qoder、Qwen Code、MiMo、Cursor 都能用，入口都是 `AGENTS.md`。
+> 命令入口由 `tools/gen_entries.py` 生成到**两族技能目录、逐字相同**：
+> `.claude/skills/` 给 Claude Code，`.agents/skills/` 给其余几家（见 README
+> 「那 `.claude/` 是干什么的？」与 `docs/tool-entries.md`）。所以「换工具就得自己
+> 报工作流文件名」那句是旧话：说「投这个岗 <链接>」、或直接敲命令名，跑的都是同一份
+> `workflows/job-apply.md`，自动触发词也在壳里带着。索引正本 `workflows/INDEX.md`
+> 仍然是第三条路——每行写着正文在哪、怎么敲、不给参数时干什么，壳不在也照样执行。
+>
+> **本文的示例按 Claude Code 写，理由只有一个：斜杠。** 2026-09-30 逐家实测之后
+> 这个理由归五家了——命令形式表（`tools/doctor.py` 的 `COMMAND_SYNTAX`）里
+> `claude` / `antigravity` / `mimo` / `qoder` / `qwen` 五格都是 `slash`，
+> `/job-auto` 那种敲法在这五家里就是它的原生形态。**只有 Codex CLI 拦**：它把开头的
+> `/` 留给自己的内置指令（实测出处见 `docs/tool-entries.md`），连同认不出来的助手
+> 一起落 `generic` 那一档、给 `job-auto`。Cursor 与 Codex 至今没有可识别标记，
+> 所以落 `generic` 是默认行为而不是判断；认错了手工指定：
+> `JOBS_CODE_TOOL=claude|antigravity|mimo|qoder|qwen|generic`。
 
 **只想先看看效果**：只装 ①，跑 `/job-setup` → `/job-scrape`（抓完自动打分排序），就能拿到真实的排序名单。
 猎聘搜索 CLI 直接跑在 Node 上（零 runtime 依赖、无编译步骤），不需要额外运行时。
@@ -81,7 +95,7 @@ npm install -g @anthropic-ai/claude-code
   的「该催哪几个」、`/job-upskill` 的缺口分格、`/job-auto` 的词表写回
 
 > 上面这一句原来写的是「**其它命令都不用它**」——不准确：本页 §1 的依赖表
-> 自己就列了七条命令用 Python 做各自的一环。它们**没有 Python 仍能跑**，
+> 自己就列了一批命令用 Python 做各自的一环。它们**没有 Python 仍能跑**，
 > 但各少一环，这和「不用它」是两回事。
 
 检查：
@@ -115,8 +129,8 @@ Windows 上 `py --version` 通常最可靠。如果你的系统把 Python 暴露
 node .agents/skills/liepin-search/cli/src/cli.ts search -q "后端开发" -l "北京" --format table
 ```
 
-**多半你已经装了 Node**——如果你的 AI 工具是 `npm install -g` 装的（Claude Code、
-Codex CLI、Gemini CLI 都是），Node 就在。确认一下版本够：
+**多半你已经装了 Node**——但各家 AI 工具的装法不一样（有的走 npm、有的是原生可执行
+文件），从手上那个工具反推不出「机器上有没有 Node」。确认一下版本够：
 
 ```bash
 node --version    # 需要 v22.18 或更高
@@ -335,7 +349,9 @@ Pop-Location
 3. **在 BOSS / 智联站内设好你的「求职期望」**（岗位 + 城市，智联还能设到区）。
    实测这两家登录后，**裸搜索页返回的就已经是按你的期望过滤好的结果**——`/job-scrape`
    优先直接用它，不再自己拼查询参数。期望设得越准，这两个渠道的结果就越对口。
-   **前程无忧**没有登录态可用，个性化用不上，靠关键词搜索。
+   **前程无忧看登录态**：登录后同样完全个性化（裸入口的页面标题直接变成你的期望岗位
+   与城市），未登录才退回关键词搜索——那时裸入口给的是本地泛招聘。2026-08-19 实测，
+   逐家记录见 cdp-portals.md。
 
 **诚实说明（务必读）**：要点如下，**账号安全铁律与诚实边界的完整、权威版本以
 [`workflows/reference/cdp-portals.md`](workflows/reference/cdp-portals.md)
@@ -352,11 +368,8 @@ Pop-Location
 
 ## 4. 填写个人资料
 
-在项目目录启动 Claude Code：
-
-```bash
-claude
-```
+**在你自己那家 AI 编码工具里打开这个项目目录。** 命令行类的先 `cd` 进来再启动它——
+工作流、命令入口、你的资料都在这个目录里，从别的目录启动它看不到。用的是哪一家都一样。
 
 然后运行：
 
@@ -364,7 +377,7 @@ claude
 /job-setup
 ```
 
-Claude 会提供三条路径：
+它会提供三条路径：
 
 - **路径 A（documents 文件夹）：** 把你的简历、领英导出、证书、推荐信放进
   **`users/<你的名字>/documents/`** 下对应的子目录（简历放 `cv/`、证书放 `diplomas/`、
@@ -492,6 +505,72 @@ typst compile "users/<你的名字>/documents/applications/<公司>_<岗位>/res
 
 这些命令针对默认的 Typst 简历模板。如果你想换用自己的模板（Typst 或 LaTeX），运行 `/job-add-template`
 —— 它会采集模板的编译引擎、字体、样式规则与页数上限，试编译通过后接入出材料的命令。详见 README 里的模板相关小节。
+
+## 7. 各家工具的权限文件：哪份是真的、哪份本仓库不生成
+
+`/job-auto` 一轮要跑好几个 `python tools/…`，第一条不批就反复问你（见常见问题里
+「跑 /job-auto 时它反复问」那一节）。换成别的 AI 工具，它也有一套「预批准」的配置——
+问题是**那套配置长什么样、放在哪**，各家全不一样，而一份「看着像」的配置会被信任、
+被提交，然后**静默什么都不做**。所以这一节按取证说话。
+
+取证方式：读**本机装好的那一家自带的** schema 与二进制，不读二手文档
+（官方 docs 那条 configuration 的 raw URL 现在 404，而安装包里的字段说明就是原文）。
+
+| 工具 | 本仓库生成它的权限文件吗 | 取证结论 |
+|---|---|---|
+| Claude Code | **生成** `.claude/settings.json` | 仓库自己就按这个形状写；`tools/security_guards.py` 现在逐条查它有没有出处 |
+| ~~Gemini CLI~~（2026-09-30 已停） | **不生成**（2026-09-29 取证后撤回，盘上那份已删） | `tools.allowed` 这个键确实存在（0.58.0 安装包的 settings schema），但它的值形如 `run_shell_command(git)`——**不带括号只写一个工具名 = 所有 shell 命令都免确认**；而 `tools.autoAccept` 在 0.58.0 的 schema 里查无此键（审批模式那个键在 `general` 块下）。曾经生成的那份两样都占。**停的是个人版登录通道，npm 包还在发版**，官方把命令行这条线指向 Antigravity CLI；所以 `tools/security_guards.py` 里那一格 key 面**留着**——谁手放一份宽授权进来，照样红。后继的 agy 不读这份文件（它的二进制里那个路径 0 命中） |
+| Codex CLI | **不生成** | 预批准命令**不是** `config.toml` 里的键，而是 execpolicy 的 rules 文件（Starlark DSL）。形状与匹配语义都实测过（下面那条命令能自己复现），但**哪个目录下的 rules 会被自动加载没实测到** |
+| Antigravity CLI（agy） | **不生成**（它的配置在用户主目录，归用户，本仓库不写那儿） | 那套流传的键名（`allowed_patterns` / `approval_policy` 等）在 agy 的二进制里 0 命中——写了不生效；实测到的只有命令行开关 |
+
+**每一家的可粘片段都由生成器给，别手抄**（片段里那些命令前缀与
+`.claude/settings.json` 同源，改一处两处一起动）：
+
+```bash
+python tools/gen_entries.py --print claude   # 已生成那份的原文
+python tools/gen_entries.py --print codex    # prefix_rule(...) 的写法 + 实测到的匹配语义
+python tools/gen_entries.py --print agy      # 下面那一节粘的就是它
+```
+
+自己复现 Codex 那一条（不需要登录，纯本地）：
+
+```bash
+codex execpolicy check --rules <规则文件> --pretty pdftotext -layout -enc UTF-8 in.pdf out.txt
+```
+
+> ⚠️ 别把 Claude 那条 `.agents/skills/*/cli/src/cli.ts` 的通配原样抄给别家。
+> 2026-09-29 实测：Codex 的 `prefix_rule` 按 token 逐段比，token 里的 `*` **匹配不上
+> 任何渠道**（返回的是空命中列表）。所以非 Claude 的片段已经把那个通配展开成
+> 你机器上真装着的渠道路径。
+
+### Antigravity CLI（agy）的权限
+
+agy 读**用户主目录**下的配置，本仓库不写那儿。它「预批准某条命令」的配置文件形状
+**没有核实到**，所以下面这段不是「粘进某个文件就生效」的配置，而是**本仓库预批的那几条
+命令前缀**的中立写法（不带任何家的语法包装）：agy 哪天支持前缀白名单，照它自己的写法
+把这几条粘进去。不加也能用，只是每条命令要批一次。
+
+```text
+# Antigravity CLI (agy) 1.2.13（2026-09-30 复核）—— 本仓库不写 agy 的配置（它在用户主目录，归用户）。
+# 权限片段的 schema 没核实到，所以这里不给可直接粘贴的配置文件写法，只给
+# 要授权的那几条命令前缀（中立写法，不带任何家的语法包装）。
+# 实测依据：agy.exe 里搜不到 allowed_patterns / approval_policy / approval_mode /
+# allow_inline_scripts / allow_dangerous_commands 这些键名（Go 的 toml tag 会以
+# 字面量留在二进制里）—— 本机 ~/.antigravity/config.toml 用的正是这套键名，
+# 而它每一项都静默不生效；别照着那份教别人。
+# 核实到的只有命令行开关（`agy --help`）：
+#   --mode accept-edits            自动允许改文件，命令仍然逐条问
+#   --sandbox                      开终端沙箱限制
+#   --dangerously-skip-permissions 全部自动批准（本仓库不推荐，等于把闸门拆了）
+# 下面不含 `Skill(...)` 那一条 —— 那是 Claude 的技能授权，agy 没有对应物。
+  node .agents/skills/liepin-search/cli/src/cli.ts
+  bun run .agents/skills/liepin-search/cli/src/cli.ts
+  pdftotext
+```
+
+最后那条 `--dangerously-skip-permissions` 等于把闸门拆了，本仓库不推荐。
+要取最新的一段：`python tools/gen_entries.py --print agy`（上面那一整段就是它的输出，
+装了新的渠道 CLI 之后要重新取一次——有条测试盯着这两份一致）。
 
 ## 常见问题
 

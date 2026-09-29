@@ -63,7 +63,7 @@ class TheListLivesInExactlyOnePlace(unittest.TestCase):
     **两处都写会分叉，而且当场就分叉了。** 2026-08-30 加 `score.py --deep` 和
     `--only` 那两条时两边各加一遍，而 job-auto 那句「Step 0 那几条」还停在旧的
     四条上 —— 同一个文件里「那几条」指四条、下面又「再加一条」加了两条。
-    判据与 `AGENTS.md`「换个工具，哪些命令还能用」那张表下面记的是同一课。
+    判据与 `docs/tool-entries.md`「换个工具，哪些命令还能用」那张表下面记的是同一课。
     """
 
     def test_the_rank_step_owns_the_list(self):

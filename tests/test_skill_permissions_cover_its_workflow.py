@@ -28,19 +28,42 @@
 
 只比到「解释器 + 第一个参数」这一层（`python tools/gap_split.py`）。再细就等于把
 每个参数组合都钉死，工作流换个 flag 就红。
+
+**这两条判据的实现现在住在 `tools/_entries.py`（`commands_in()` 与 `covered()`），
+本文件 import 它，不再自己抄一份。**原来这里是 `RUNNERS`、`_FENCE`、
+`_commands_in()`、`_covered()` 四样副本（2026-08-18 那两次事故催生的判据，
+Task 2 把它们搬进派生器，2026-09-29 删掉这一份）—— 同一个「什么算一条要跑的命令」
+写两处，改一处忘一处，而忘的那一处正是缺口藏身的地方
+（`AGENTS.md`「一条规则只贴在一个写手身上，另外两个照样会犯」）。
+
+留在本文件的是另外两半，它们不是副本：`_ALLOWED` / `_allowed_bash` 读的是**壳**
+（派生器只管生成，不管回读），`_inline_commands` / `INLINE_EXEMPT` / `FENCE_EXEMPT`
+问的是**正文里那句算不算运行时步骤** —— 生成器刻意不问这个问题（它只认代码块），
+所以判据在派生器里没有、也不该有对应实现。
+
+## 围栏必须贴 bash 标签（2026-09-29 Task 3 评审后新增）
+
+上面这套「围栏 + 正文」双路提取有个共同盲区：**裸 ``` 围栏**。围栏提取只认
+`_entries._FENCE` 那几种标签（bash / sh / shell / console），而正文提取先把所有
+围栏整段剥掉——藏在没贴标签的围栏里的命令，**两头都看不见**。实测代价：`job-auto.md` 收尾段
+九条 `python tools/*.py`（writeback / archive / export_web_data / check_outreach…）
+藏在裸围栏里，生成的壳一条都没批，招牌命令每一步都要用户手点授权；而当时的
+缺口清单数出 13 条，正是因为同一类缺口对判据不可见。所以这里加一条守卫：
+`test_no_unlabelled_fence_hides_a_runner_command`。修法是**给围栏贴标签**，
+不是给壳补权限——贴上 `bash`，派生自然就批到了。
 """
 
 import re
+import sys
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tools"))
 
-#: 要在 shell 里跑的解释器。`git` 不在内——工作流里没有，写进来只会招误报。
-RUNNERS = ("python", "python3", "node", "bun", "npm", "npx",
-           "typst", "pdftotext", "pdftoppm")
+import _entries  # noqa: E402  （判据只有一份：commands_in / covered / derives_nothing / fence_blocks / _one_command）
 
-_FENCE = re.compile(r"```(?:bash|sh|shell|console)\n(.*?)```", re.S)
+#: 读**壳**的判据（不是派生权限的判据），所以留在本文件。
 _ALLOWED = re.compile(r"^allowed-tools:(.*)$", re.M)
 
 #: 正文（不在代码块里）出现的 `python tools/X.py`：要么被 `allowed-tools`
@@ -56,6 +79,49 @@ _ALLOWED = re.compile(r"^allowed-tools:(.*)$", re.M)
 INLINE_EXEMPT = {
     ("job-scrape", "python tools/audit_pipeline.py"):
         "「下次改这一步之前，先跑…」—— 给改工作流的人看的，不是运行时的步骤",
+    # 下面两条同形状：那一句讲的是**用户走的另一条路**（总览页上点按钮），
+    # 不是这条命令自己要跑的一步。给它们补权限等于替「面板」这条路与本命令绑定，
+    # 而面板那条路由 `/job-dashboard`（正文围栏里就写着 serve.py）负责。
+    ("job-rank", "python tools/serve.py"):
+        "「先确认用户是不是在走这条路。总览页正常跑法是 python tools/serve.py」——"
+        "那是**指路**：服务已开着时点「不投」直接写回，根本不进这条命令",
+    ("job-outcome", "python tools/serve.py"):
+        "「用 python tools/serve.py 打开总览页时…点一下就行，不用回来跑这条命令」——"
+        "同上，那一段的存在理由就是把用户**从这条命令上引开**",
+}
+
+#: 围栏里**真跑**、而派生器**刻意不映射**的那几条（`_entries._rule_for` 返回 None）。
+#:
+#: **这不是逃生口**：一条命令能进这张表的前提是派生器自己也拒绝为它生成规则
+#: （下面 `test_the_fence_exemptions_stay_narrow` 逐条这么验）。所以「把授权放宽
+#: 到能派生、好让豁免消失」那种反向操作在这里走不通——能派生的命令永远被
+#: `test_every_runnable_command_is_permitted` 逼着补权限。
+#:
+#: 为什么需要一个 INLINE_EXEMPT 之外的表：inline 那张管的是「这句到底是步骤吗」，
+#: 而这里的是**步骤**，只是它的窄权限不存在。
+FENCE_EXEMPT = {
+    ("job-html-report", "python -c"):
+        "`--open` 那一步用 `python -c \"…webbrowser.open…\"` 把刚写出的报表打开。"
+        "`Bash(python -c:*)` 授权的是**任意内联代码**，而 `Bash(python:*)` 等于没有闸门"
+        "（`tests/test_entries_derivation.py::test_no_wide_bash_rule_is_derived` 就钉着"
+        "派生器不许产出 `python -c`）。仓库里也没有第二个脚本能打开任意路径 —— "
+        "`tools/` 里唯一用 webbrowser 的是 `serve.py`，而它起的是总览页服务。"
+        "**所以这条缺口是设计**：工作流正文自己写着「没有执行权限就开口要；"
+        "真的要不到，再退回告诉他路径」。撤掉豁免的正确做法是给仓库加一个"
+        "`tools/` 下的确定性入口，不是给它加权限。",
+
+    ("job-add-portal", "node .agents/skills/<name>/cli/src/cli.ts"):
+        "这一条与其余几条不是一类：它不是**漏批**，是**批不了**。工作流里那句是"
+        "模板（`<name>` 要被换成新渠道的目录名，见 `job-add-portal.md` 自己写的"
+        "`Bash(node .agents/skills/<name>/cli/src/cli.ts:*)` 那一步），渠道还没落地"
+        "时盘上根本没有这条路径，`derives_nothing()` 因此认它派生不出规则。"
+        "已装着的渠道由 `_entries.PORTAL_BASH` 逐条批**具体**前缀，那些是真覆盖得住的。"
+        "\n\n原来这一格是靠通配规则 `Bash(node .agents/skills/*/cli/src/cli.ts:*)` "
+        "过检的，而 2026-09-29 实测证明那条通配在 Claude 里什么都不放行（前缀按字面比，"
+        "中间的 `*` 就是星号）——**它盖住这条模板只是因为 `covered()` 比真实客户端宽**，"
+        "不是因为它批到了什么。撤掉豁免的正确做法不是把通配写回来（那边有专门的测试拦"
+        "：`test_bash_permissions_use_the_prefix_form.py::test_no_mid_pattern_wildcard`），"
+        "而是新渠道建好后把它的具体前缀补进 `PORTAL_BASH`。",
 }
 
 
@@ -66,8 +132,43 @@ def _inline_commands(workflow: Path) -> set:
             for x in re.findall(r"python\s+tools/([a-z_]+)\.py", t)}
 
 
+def _hidden_runner_commands(text: str) -> list:
+    """裸围栏（``` 后不写语言标签）里藏着的 RUNNERS 命令。
+
+    判据全部借自派生器本尊——`_entries.fence_blocks`（外层围栏配对）、
+    `_entries._one_command`（一行算不算命令，与 `commands_in` 同一个）——
+    **「哪些标签的围栏算命令块」这一个判断，本文件已经不再自己写一份**
+    （原来那份模块级 `_FENCE` 与逐行判据 `_commands_in()` 已删，改读
+    `_entries.commands_in`）。
+    ⚠️ 这句话的范围要说准：`_inline_commands()` 里那个**整段剥掉围栏**的
+    `re.sub` **还在**，但它不是这里的副本 —— 它剥的是**全部**围栏
+    （不分标签、不做外层配对），为的是「围栏之外正文里提到的命令」那半边判据，
+    与「哪段算命令块」是两个问题。
+    只查**没贴标签**的：`json` / `python` / `markdown` 那些是明确声明过的
+    「非命令块」，命令藏在里面不算盲区。
+    """
+    out = []
+    for label, body in _entries.fence_blocks(text):
+        if label:
+            continue
+        for line in body.splitlines():
+            cmd = _entries._one_command(line)
+            if cmd:
+                out.append(cmd)
+    return out
+
+
 def _skills():
-    return sorted(ROOT.glob(".claude/skills/*/SKILL.md"))
+    """两族壳都要查。
+
+    `.claude/skills/` 与 `.agents/skills/` 逐字相同（生成器保证），但**这条测试查的
+    不是「两份一致」而是「壳的权限够不够它那份工作流用」**——只查一族的话，
+    将来有人手改另一族，工作流照跑、权限不够，用户看到的是一串失败的命令。
+    """
+    out = []
+    for fam in _entries.SHELL_FAMILIES:
+        out += sorted((ROOT / fam / "skills").glob("*/SKILL.md"))
+    return out
 
 
 def _target_workflow(skill: Path):
@@ -87,50 +188,19 @@ def _target_workflow(skill: Path):
     return p if p.is_file() else None
 
 
-def _commands_in(workflow: Path) -> set:
-    """工作流的 ```bash 块里，每条命令的「解释器 + 第一个参数」。"""
-    out = set()
-    for block in _FENCE.findall(workflow.read_text(encoding="utf-8")):
-        for line in block.splitlines():
-            line = line.strip().lstrip("$ ").strip()
-            # 行尾注释不算命令的一部分
-            line = line.split("#")[0].strip()
-            parts = line.split()
-            if len(parts) >= 2 and parts[0] in RUNNERS:
-                out.add(f"{parts[0]} {parts[1]}")
-            elif len(parts) == 1 and parts[0] in RUNNERS:
-                out.add(parts[0])
-    return out
-
-
 def _allowed_bash(skill: Path) -> list:
     m = _ALLOWED.search(skill.read_text(encoding="utf-8"))
     return re.findall(r"Bash\(([^)]*)\)", m.group(1)) if m else []
 
 
-def _covered(cmd: str, rules: list) -> bool:
-    """某条命令是否被任一规则允许。
-
-    规则是前缀形式 `<前缀>:*`，也可能是精确形式（`node --version`）。
-    两种都按「命令以规则的前缀开头」判——精确形式恰好是前缀的退化情形。
-    """
-    for r in rules:
-        prefix = r[:-2] if r.endswith(":*") else r
-        # 通配的路径段（`.agents/skills/*/cli/...`）按正则比
-        if "*" in prefix:
-            pat = "^" + ".*".join(re.escape(x) for x in prefix.split("*"))
-            if re.match(pat, cmd):
-                return True
-        elif cmd.startswith(prefix):
-            return True
-    return False
-
-
 class SkillPermissionsCoverItsWorkflow(unittest.TestCase):
 
     def test_the_scan_finds_the_skills(self):
-        """控制用例：一个技能都没扫到时下面那条是空跑。"""
-        self.assertGreaterEqual(len(_skills()), 3, "技能目录扫空了，判据失去依据")
+        found = _skills()
+        self.assertGreaterEqual(
+            len(found), 44,
+            f"只扫到 {len(found)} 份壳 —— 大概是 glob 打空了，而不是仓库真的只剩这么几份。"
+            "（22 × 两族 = 44，另加 .agents/skills/liepin-search）")
 
     def test_every_runnable_command_is_permitted(self):
         bad = []
@@ -138,15 +208,66 @@ class SkillPermissionsCoverItsWorkflow(unittest.TestCase):
             wf = _target_workflow(sk)
             if wf is None:
                 continue                      # 纯咨询壳，没有要执行的正文
+            name = sk.parent.name
             rules = _allowed_bash(sk)
-            for cmd in sorted(_commands_in(wf)):
-                if not _covered(cmd, rules):
-                    bad.append(f"{sk.parent.name}: 工作流要跑 `{cmd}`，"
-                               f"但 allowed-tools 里没有对应的 Bash 规则")
+            for cmd in sorted(_entries.commands_in(wf.read_text(encoding="utf-8"))):
+                if _entries.covered(cmd, rules):
+                    continue
+                if (name, cmd) in FENCE_EXEMPT and _entries.derives_nothing(cmd):
+                    continue                  # 派生器也不认它 —— 见那张表的说明
+                bad.append(f"{sk.relative_to(ROOT).as_posix()}: "
+                           f"工作流要跑 `{cmd}`，"
+                           f"但 allowed-tools 里没有对应的 Bash 规则")
         self.assertEqual(
             bad, [], "\n  " + "\n  ".join(bad)
             + "\n技能跑起来时手里只有 allowed-tools 列出的工具；缺一条，"
               "工作流里那一步就得让用户逐次手批，或者干脆跑不了。")
+
+    def test_the_fence_exemptions_stay_narrow(self):
+        """FENCE_EXEMPT 只能装「派生器自己也拒绝映射」的那几条，而且要还活着。
+
+        没有这条，那张表就跟所有豁免表一样慢慢烂成一个逃生口：先随手加一条把红的
+        测试压绿，下一个人在下面那条上照抄一次 —— 于是缺口被登记成规矩。
+        两条判据都要在：命令还在那份围栏里（豁免没有对着幽灵），
+        以及 `derives_nothing` 仍说不派生（**有人给派生器开了宽规则，
+        这条就先红** —— 那正是该撤豁免的那一刻，不是该留着的）。
+        """
+        ghost, too_wide = [], []
+        for (name, cmd), _why in FENCE_EXEMPT.items():
+            wf = ROOT / "workflows" / f"{name}.md"
+            self.assertTrue(wf.is_file(), f"{name}: 豁免指着一份不存在的工作流")
+            if cmd not in _entries.commands_in(wf.read_text(encoding="utf-8")):
+                ghost.append(f"{name}: {cmd}")
+            if not _entries.derives_nothing(cmd):
+                too_wide.append(f"{name}: {cmd}")
+        self.assertEqual(ghost, [], f"这几条豁免指着的命令已经不在围栏里了：{ghost}")
+        self.assertEqual(
+            too_wide, [],
+            f"派生器现在能为这几条生成规则了，豁免该撤、权限该补：{too_wide}")
+
+    def test_the_fence_exemption_table_is_not_empty_by_accident(self):
+        """对照用例：这张表真在豁免一条**会被上面那条抓到**的缺口。
+
+        做法是把它临时清空再跑一次同样的判定 —— 有缺口时列表必须非空。
+        否则「表里的都被 derives_nothing 放行」可能只是因为根本没有缺口。
+        """
+        if not FENCE_EXEMPT:
+            self.skipTest("没有围栏豁免，这条对照不适用")
+        # 用集合而不是列表：两族壳字节相同，同一条缺口会在 `.claude` 与
+        # `.agents` 各出现一次 —— 那是**同一条**豁免盖住的同一个洞，不是两个洞。
+        holes = set()
+        for sk in _skills():
+            wf = _target_workflow(sk)
+            if wf is None:
+                continue
+            name = sk.parent.name
+            rules = _allowed_bash(sk)
+            for cmd in _entries.commands_in(wf.read_text(encoding="utf-8")):
+                if (not _entries.covered(cmd, rules)
+                        and (name, cmd) in FENCE_EXEMPT):
+                    holes.add(f"{name}: {cmd}")
+        self.assertEqual(sorted(holes), sorted(f"{n}: {c}" for (n, c) in FENCE_EXEMPT),
+                         "表里记的和实际缺口不一致 —— 要么多登了，要么那条已被别的方式覆盖")
 
     def test_inline_commands_are_granted_or_exempt(self):
         """写在正文里的运行时步骤，代码块那条判据看不见。
@@ -161,13 +282,14 @@ class SkillPermissionsCoverItsWorkflow(unittest.TestCase):
                 continue
             name = sk.parent.name
             rules = _allowed_bash(sk)
-            fenced = _commands_in(wf)
+            fenced = _entries.commands_in(wf.read_text(encoding="utf-8"))
             for cmd in sorted(_inline_commands(wf)):
-                if cmd in fenced or _covered(cmd, rules):
+                if cmd in fenced or _entries.covered(cmd, rules):
                     continue
                 if (name, cmd) in INLINE_EXEMPT:
                     continue
-                bad.append(f"{name}: 正文里写着 `{cmd}`，而 allowed-tools 没给 "
+                bad.append(f"{sk.relative_to(ROOT).as_posix()}: "
+                           f"正文里写着 `{cmd}`，而 allowed-tools 没给 "
                            f"—— 是运行时的步骤就补权限，不是就进 INLINE_EXEMPT")
         self.assertEqual(bad, [], "\n  " + "\n  ".join(bad))
 
@@ -194,30 +316,94 @@ class SkillPermissionsCoverItsWorkflow(unittest.TestCase):
         self.assertEqual(stale, [], f"这几条豁免已经没有对应的正文了：{stale}")
 
     def test_a_consulting_shell_is_not_asked_for_permissions(self):
-        """纯咨询壳（正文里只有参考资料、没有「执行 workflows/x.md」）应当被跳过。
+        """纯咨询壳不申请执行权限 —— 权限窄是它的边界，不是漏了。
 
-        `job-application-assistant` 就是这一种：它给建议，真要投递时把人交给
-        `/job-apply`（那条命令没有 allowed-tools 限制）。要求它申请 typst 权限
-        既没必要，也会让人以为这个壳自己会编译 PDF。
+        `job-application-assistant` 是「聊到求职就自动接管」的：一句「看看这个岗」
+        就把控制权交给它。这样的壳手里不该攥着编译、写盘、起子代理。
+        真要出材料那一步它把人交给 `/job-apply`——那是**另一个壳**，权限由它自己
+        那份工作流正文派生，与本壳无关。
+
+        判据：本壳的 `allowed-tools` 里不出现 Bash 与 Agent。给它开 typst 既没必要，
+        也会让人以为这个壳自己会编译 PDF。
+
+        （原来这条给的理由是「`/job-apply` 那条命令**没有 allowed-tools 限制**」，
+        而那句在 stub 删掉之后不成立：`/job-apply` 今天是一个生成壳，自己带着
+        由它那份工作流正文派生的 `allowed-tools`。同一个旧理由**还写在路由壳的
+        正文里**（两族 `skills/job-application-assistant/SKILL.md` 都有一句
+        「那两条命令的 stub 没有 frontmatter，不受本壳的权限限制」）——
+        那是壳的正文，改它要两族一起改，不是这条测试的范围；
+        谁只改了一边，`tests/test_shell_families_are_byte_identical.py`
+        的 `test_the_handwritten_router_matches_too` 当场红。）
         """
-        shell = ROOT / ".claude" / "skills" / "job-application-assistant" / "SKILL.md"
-        # **不跳过**：`.claude/skills/` 下这三个壳是本仓库自带的、已跟踪的，
-        # 不像 `.agents/skills/` 下的渠道技能那样可插拔。它不在就是出事了。
-        self.assertTrue(shell.is_file(),
-                        "job-application-assistant 的壳不在了 —— 它是自带技能，不该缺")
-        self.assertIsNone(_target_workflow(shell),
-                          "咨询壳被当成了执行壳——判据认错了「执行」那一句")
+        for fam in _entries.SHELL_FAMILIES:
+            p = ROOT / fam / "skills" / "job-application-assistant" / "SKILL.md"
+            # **不跳过**：两族里这份壳都是本仓库自带、已入库的，不像
+            # `.agents/skills/` 下的渠道技能那样可插拔。它不在就是出事了。
+            self.assertTrue(p.is_file(),
+                            f"{fam}: 咨询壳的壳文件不在了 —— 它是自带技能，不该缺")
+            lines = [ln for ln in p.read_text(encoding="utf-8").splitlines()
+                     if ln.startswith("allowed-tools:")]
+            self.assertEqual(len(lines), 1,
+                             f"{fam}: 咨询壳的 allowed-tools 行不是恰好一行，"
+                             "下面那两条判据会对着不存在或重复的行放行")
+            line = lines[0]
+            self.assertNotIn("Bash(", line, f"{fam}: 咨询壳申请执行权限了")
+            self.assertNotIn("Agent", line, f"{fam}: 咨询壳申请起子代理了")
+            self.assertIsNone(_target_workflow(p),
+                              f"{fam}: 咨询壳被当成了执行壳——判据认错了「执行」那一句")
 
     def test_the_check_would_actually_catch_something(self):
-        """控制用例：判据对一条明显缺失的权限必须报。"""
-        self.assertFalse(_covered("python tools/gap_split.py",
-                                  ["Bash(node --version)"]),
+        """控制用例：判据对一条明显缺失的权限必须报（判据本尊在 `_entries.covered`）。"""
+        self.assertFalse(_entries.covered("python tools/gap_split.py",
+                                          ["Bash(node --version)"]),
                          "判据把一条没被允许的命令当成允许了")
-        self.assertTrue(_covered("python tools/gap_split.py",
-                                 ["python tools/gap_split.py:*"]))
-        self.assertTrue(_covered("node .agents/skills/liepin-search/cli/src/cli.ts",
-                                 ["node .agents/skills/*/cli/src/cli.ts:*"]),
-                        "带通配的路径规则没认出来")
+        self.assertTrue(_entries.covered("python tools/gap_split.py",
+                                         ["python tools/gap_split.py:*"]))
+        self.assertTrue(
+            _entries.covered("node .agents/skills/liepin-search/cli/src/cli.ts",
+                             ["node .agents/skills/*/cli/src/cli.ts:*"]),
+            "带通配的路径规则没认出来")
+
+    def test_no_unlabelled_fence_hides_a_runner_command(self):
+        """裸围栏里不许藏着要跑的命令 —— 那是派生与正文两条提取路的共同盲区。
+
+        修法只有一个：**给围栏贴 `bash` 标签**，贴上派生就自然批到
+        （job-rank 的 writeback / archive / export_web_data 就是这么被批的）。
+        别给壳补 `extra_tools` 绕过去：留着一个看不见的围栏，下一个往里加的
+        命令照样没人看见（2026-09-29 job-auto 事故的原样）。
+        装散文、JSON、控制台回声、文件清单的围栏**不是**命令块——扫到命中时
+        先读那段再动手，别见标签就贴。
+        """
+        bad = []
+        bare_seen = 0
+        for wf in sorted((ROOT / "workflows").rglob("*.md")):
+            text = wf.read_text(encoding="utf-8")
+            bare_seen += sum(1 for label, _ in _entries.fence_blocks(text) if not label)
+            for cmd in sorted(set(_hidden_runner_commands(text))):
+                bad.append(f"workflows/{wf.name}: 未贴标签的围栏里藏着 `{cmd}`"
+                           " —— 它是要跑的命令就给围栏贴 bash，不是就移出围栏")
+        self.assertGreaterEqual(
+            len(list((ROOT / "workflows").rglob("*.md"))), 20,
+            "workflows/ 扫空了，这条守卫在空集上恒绿")
+        self.assertGreaterEqual(
+            bare_seen, 30,
+            f"全仓库只扫到 {bare_seen} 段裸围栏 —— 配对大概是坏了（实测 2026-09-29 是 57）")
+        self.assertEqual(bad, [], "\n  " + "\n  ".join(bad))
+
+    def test_the_unlabelled_fence_guard_can_fire(self):
+        """对照用例：判据必须真抓得到那条盲区的命令 —— 否则上面恒绿。
+
+        三个形状一起验：裸围栏里的命令要抓到；```bash 里的同一命令**不算**
+        （派生看得见它，不是盲区）；裸围栏里的散文（`while 真:` 那类伪代码）
+        不报——不然任何一份写流程图的文档都红。
+        变异验证（2026-09-29 提交前实跑）：把 `job-auto.md` 的 bash 标签撕掉
+        恢复成裸 ```，这条守卫的实体判据当场报出 9 条；贴回后归零。
+        """
+        text = ("散文\n\n```\npython tools/writeback.py --apply\n```\n\n"
+                "```bash\npython tools/writeback.py --apply\n```\n\n"
+                "```\nwhile 真:\n    1. 跑 /job-rank\n```\n")
+        self.assertEqual(_hidden_runner_commands(text), ["python tools/writeback.py"],
+                         "裸围栏里的命令没抓到，或把 bash 围栏/散文也误报了")
 
 
 if __name__ == "__main__":

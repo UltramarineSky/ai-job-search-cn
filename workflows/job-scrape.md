@@ -1,6 +1,6 @@
 # /job-scrape —— 抓新岗并自动评分：各平台去重收集，抓完直接排出可以投的
 
-本工作流里所有个人数据路径——`profile/search-queries.md`、`job_scraper/seen_jobs.json`、`job_search_tracker.csv`——都是**活动用户的**，即在 `users/<活动用户>/` 下（解析规则见 `AGENTS.md`「活动用户与多用户」）。**先读 `.active_user`**；缺失或为空就让用户去跑 `/job-setup`（第一个用户）或 `/job-user`（切换），然后停。框架自带的 `workflows/reference/search-queries.md` 是**共享的结构模板**，就放在原处——**绝不要把它和活动用户真正的查询词搞混**。（它以前放在 Claude 的技能目录里；正文搬走之后这句话仍然指着那儿，**指向一个已经不存在的文件**——而对非 Claude 的工具来说，「技能目录」这个概念压根不存在。）
+本工作流里所有个人数据路径——`profile/search-queries.md`、`job_scraper/seen_jobs.json`、`job_search_tracker.csv`——都是**活动用户的**，即在 `users/<活动用户>/` 下（解析规则见 `AGENTS.md`「活动用户与多用户」）。**先读 `.active_user`**；缺失或为空就让用户去跑 `/job-setup`（第一个用户）或 `/job-user`（切换），然后停。框架自带的 `workflows/reference/search-queries.md` 是**共享的结构模板**，就放在原处——**绝不要把它和活动用户真正的查询词搞混**。（它以前放在 Claude 的技能目录里；正文搬走之后那句话**当时**仍然指着那儿，也就是指向一个已经不存在的文件——而对非 Claude 的工具来说，「技能目录」这个概念压根不存在。）
 
 ---
 
@@ -441,7 +441,7 @@ python tools/portal_budget.py --wait navigate --portal 猎聘 # 睡够间隔再�
   告诉你太密、不会拦住你——2026-08-20 实测三次点卡片用了 1.8-2.2 秒就是这么过去的。
 - ⚠️ **`browser_batch` 里不许放两个发请求的动作**（两个 navigate、navigate + click…）。
   它把动作打包成一次往返、**中间零延迟**，在平台看来是 0 毫秒内连开两个页面。
-  详见 `cdp-portals.md` 的间隔分级那一节。
+  详见 `cdp-portals.md`「间隔按动作的轻重分级」那张表（取值只有一处：`portal_budget.GAP_S`）。
 - 撞了验证码 / 风控页 → `--block <撞上的那条渠道> --why "…"`，**那条通道**
   24 小时冷却（渠道名要给准：`liepin-search` / `liepin-browser`）。
   **CLI 撞限流之后不要按原速换浏览器**——浏览器那条**放慢、不停**（间隔 ×3），
@@ -537,8 +537,9 @@ Step 4.6 会把它们连同实测产出一起记下来，下一轮就不必再�
 #### 1a. 先看 CLI 跑不跑得起来
 
 portal CLI 是零 runtime 依赖的 TypeScript 源码，**没有编译步骤**，node 与 bun 都能直接跑。
-**node 是默认路径**——Claude Code 本身走 `npm install -g` 安装，所以 Node 必然已存在，
-用户不必额外装 Bun。
+**node 是默认路径**：Node 在绝大多数机器上已经有了，但**别从「他装了哪家 AI 工具」反推**
+——各家装法不一样（有的走 npm、有的是原生可执行文件），下面那条 `node --version`
+就是当场量它用的。用户不必额外装 Bun。
 
 ```bash
 node --version    # 需要 v22.18+（默认剥离 TS 类型；22.6 起要加开关，不算）
@@ -558,9 +559,10 @@ node --version    # 需要 v22.18+（默认剥离 TS 类型；22.6 起要加开�
 读遍 `.agents/skills/*/SKILL.md`，把已装的渠道 CLI 全找出来。
 
 > ⚠️ **那底下不全是渠道。** 判据是**有没有 `.agents/skills/*/cli/src/cli.ts`** ——有才是渠道技能。
-> 同一层还放着三份自动触发用的技能壳（`job-application-assistant` / `job-scrape` /
-> `job-upskill`），那是同一份壳按各家 AI 工具的约定各放一处，**不是渠道**：没有 CLI，也没有 `url-reference.md`。
-> 照目录名一把捞，会捞出 4 个「已装渠道」而实际只有 1 个（2026-08-31 实测）。
+> 同一层还放着命令的技能壳（`job-application-assistant` 那份手写的路由壳，加上
+> `tools/gen_entries.py` 按 `workflows/INDEX.md` 生成的那 21 份），那是同一份壳按各家 AI 工具的
+> 约定各放一处，**不是渠道**：没有 CLI，也没有 `url-reference.md`。
+> 照目录名一把捞，捞出来的绝大多数都不是渠道（2026-08-31 实测：4 个目录、1 个渠道）。
 
 每份 `SKILL.md` 都写着那个渠道**确切的命令行参数与用法示例**。**照它写的接口用，不要猜参数。**这样一来，`/job-add-portal` 新接进来的渠道会自动被认到，不必改本文件。
 

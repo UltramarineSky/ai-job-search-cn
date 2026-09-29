@@ -4257,10 +4257,10 @@ def check_which_exclusion_costs_the_most(seen, details) -> list:
 
 
 def check_referral_note_is_missing(seen, details) -> list:
-    """具名直招的材料里没有内推请托 —— 而那是回复率最高的那条路。
+    """具名直招的材料里没有内推请托 —— 那是这些岗唯一不靠海投的一条路。
 
-    `06-outreach-templates.md` 渠道 5 与 `/job-apply` 第 1.6c 都写着：内推是
-    国内回复率最高的到达方式，**而它只对具名直招成立**（猎头代招的简历进的是
+    `06-outreach-templates.md` 渠道 5 与 `/job-apply` 第 1.6c 都写着这一节，
+    **而它只对具名直招成立**（猎头代招的简历进的是
     猎头的库，匿名雇主连找谁都不知道）。判据是机器算得出来的：
     `isHeadhunter` 为假 + 公司名不是「某……公司」这类脱敏写法。
 
@@ -4313,7 +4313,8 @@ def check_referral_note_is_missing(seen, details) -> list:
     newest = max((d for _x, d in miss if d), default="")
     span = f"，最新一份 {newest}" if newest else ""
     return [("warn", "具名直招的材料里没有内推请托",
-             f"{len(miss)}/{n} 份。内推是国内回复率最高的到达方式，而它只对"
+             f"{len(miss)}/{n} 份。内推是这些岗唯一一条不靠海投的到达方式，"
+             f"而它只对"
              f"具名直招成立 —— 这几个岗恰好是全库里唯一有这条路的那批"
              f"（判据见 /job-apply 第 1.6c）。"
              f"这个数说的是存量{span}：这一节 2026-08-24 才上线，"

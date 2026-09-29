@@ -195,8 +195,9 @@ class EverySubdirIsEitherScannedOrExplained(unittest.TestCase):
             " —— 加一个新目录而这里不提，它就被无声地漏掉了")
 
     def test_the_index_does_not_overpromise(self):
-        """索引不许说「全部文件」—— 有两个目录是**有意不扫**的。"""
-        ag = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        """索引不许说「全部文件」—— 有两个目录是**有意不扫**的。
+        （索引表正本在 workflows/INDEX.md，2026-09-29 从 AGENTS.md 搬过去。）"""
+        ag = (ROOT / "workflows" / "INDEX.md").read_text(encoding="utf-8")
         i = ag.index("`workflows/job-expand.md`")
         row = ag[i:ag.index("\n", i)]
         self.assertNotIn(

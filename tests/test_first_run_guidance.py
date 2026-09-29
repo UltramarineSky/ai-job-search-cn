@@ -35,15 +35,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def _canonical_env() -> dict:
+def _canonical_env(tool: str = "claude") -> dict:
     """钉死标准命令形式（带斜杠）的子进程环境。
 
     doctor 按宿主工具把 `/job-xxx` 去斜杠，而子进程继承本会话的探测信号：
     Claude Code 会话里带斜杠、CI / 普通终端不带。这些断言钉的是文档正本的
     标准形式，渲染层去斜杠另有 test_code_tool_detection 整条覆盖
     （2026-09-12 这套在 CI 里红过两条）。
+
+    默认 `claude` 就是这个文件原来那条漏判的成因：**七个场景全都只在一家
+    工具下跑**，于是「非 Claude 用户看到的第一个指路」从来没有被测过。
+    要测别的档就传 `tool`，那时命令是去斜杠的形态，断言得按那个写。
     """
-    return dict(os.environ, JOBS_CODE_TOOL="claude")
+    return dict(os.environ, JOBS_CODE_TOOL=tool)
 
 
 def _filled_profile() -> str:
@@ -96,14 +100,14 @@ def _build(tmp: Path, scenario: str) -> None:
     raise AssertionError(f"没有这个场景：{scenario}")
 
 
-def _doctor(scenario: str) -> str:
+def _doctor(scenario: str, tool: str = "claude") -> str:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
         _build(tmp, scenario)
         r = subprocess.run([sys.executable, str(tmp / "tools" / "doctor.py")],
                            capture_output=True, text=True, encoding="utf-8",
                            errors="replace", timeout=180, cwd=tmp,
-                           env=_canonical_env())
+                           env=_canonical_env(tool))
         out = (r.stdout or "") + (r.stderr or "")
         assert "Traceback" not in out, f"[{scenario}] 自检崩了：\n{out[-800:]}"
         assert r.returncode == 0, (
@@ -177,6 +181,48 @@ class EveryStartingStateGetsARunnableNextStep(unittest.TestCase):
         nxt = out[out.find("下一步做什么"):]
         self.assertNotIn("还差这几项", nxt,
                          "进度段说没建过、下一步说「还差这几项」——两段对不上")
+
+
+class TheFirstRunGuidanceWorksForEveryTool(unittest.TestCase):
+    """新用户看到的第一条指路，不能要他去启动某一家的工具。
+
+    `_CommandStream` 把整份输出里的 `/job-xxx` 按宿主工具改写，命令形式那一层
+    是全局兜住的；但它**管不了一个不带 `/job-` 前缀的程序名**。首轮那段就踩过
+    这个缝——它硬印一行
+
+        claude              # 在这个目录启动 Claude Code
+
+    对 Claude 用户是对的，对另外几家（吃斜杠的 agy / Qoder / Qwen / MiMo、
+    要去斜杠的 Codex、以及认不出来的助手）是让人去敲一个手上没有的命令。
+
+    **这个 bug 能活着，是本文件那条判据的形状造成的**：七个场景原来全在
+    `JOBS_CODE_TOOL=claude` 下跑，非 Claude 的首轮输出一次都没被断言过。
+    所以这里断言的不是「没有 claude 这个词」——结尾那条 💡 本来就要印可选值，
+    里面就有 claude；断言的是**缩进的「照抄就能敲」那一行里只准出现本仓库的命令**。
+    这个口径不需要知道每一家的启动命令叫什么（那得逐家实测），也就不会多一家
+    工具就失效。
+    """
+
+    #: 缩进两格以上 = 「这一行请直接敲」，不是散文。
+    _TYPED = re.compile(r"^ {2,}(\S+)")
+
+    def test_it_names_no_command_but_the_repo_own(self):
+        for tool in ("claude", "codex", "generic"):
+            with self.subTest(tool=tool):
+                # 切掉结尾那条 💡：它印的 `JOBS_CODE_TOOL=a|b|c` 里必然带着各家名字，
+                # 那是「认错了怎么纠正」，不是「现在该敲什么」。
+                nxt = _doctor("全新clone", tool).split("💡")[0]
+                typed = [m.group(1) for m in
+                         (self._TYPED.match(line) for line in nxt.splitlines())
+                         if m]
+                self.assertTrue(typed, f"[{tool}] 首轮没印出任何「照抄就能敲」的行")
+                self.assertTrue(any(c.lstrip("/").startswith("job-setup")
+                                    for c in typed),
+                                f"[{tool}] 首轮没把建档那条命令印成可敲的一行：{typed}")
+                for cmd in typed:
+                    self.assertTrue(cmd.lstrip("/").startswith("job-"),
+                                    f"[{tool}] 首轮让人敲 {cmd} —— 那是某一家的启动命令，"
+                                    f"换一家的用户照敲就是 command not found")
 
 
 if __name__ == "__main__":

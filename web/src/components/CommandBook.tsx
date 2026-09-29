@@ -14,19 +14,19 @@ import { useCodeTool } from "../context/CodeToolContext";
  *
  * 实测面板只露过 18 个工作流里的 7 个。`/job-outcome`（投完记录结果，投递之后最该做的
  * 一件事）、`/job-offer`（拿到 offer 谈薪与背调红线）、`/job-upskill` 连提都没提过。
- * 它们各自有完整的工作流文件、有命令 stub、有测试——唯独在界面上查无此人。
+ * 它们各自有完整的工作流文件、有入口壳、有测试——唯独在界面上查无此人。
  *
  * ## 光有命令名还不够
  *
  * 第二版只印了「命令 + 一句话」。可这些命令**大多能带参数**，而参数才是它们真正
  * 好用的地方：`/job-apply --top 20` 能一次备齐 20 个岗的材料、`/job-outcome followup`
  * 直接告诉你该催哪几个、`/job-reset profile` 只清资料而不动投递记录。这些在
- * 工作流文件里都写着，用户却只有把 18 个文件读一遍才知道。所以每条命令都带上
+ * 工作流文件里都写着，用户却只有把它们挨个读一遍才知道。所以每条命令都带上
  * **真实支持**的敲法举例——照抄就能跑，不必先读文档。
  *
  * ## 这张表从哪来
  *
- * `AGENTS.md` 的「工作流索引」，由 `build_dashboard.parse_commands()` 解析，
+ * `workflows/INDEX.md` 的「工作流索引」，由 `build_dashboard.parse_commands()` 解析，
  * 说明取「任务」列、举例取第三列（按 ` · ` 分条）。
  * **不在这里写死**：写死必然跟索引飘——加一个工作流、改一句说明，面板还停在
  * 上一版，而用户没有任何理由怀疑面板漏了东西。
@@ -63,16 +63,16 @@ function Examples({ it }: { it: CommandItem }) {
   );
 }
 
-/** `spineOnly`：只出「日常就这三条」那一块，不出下面那 20 条全集。
+/** `spineOnly`：只出「日常就这三条」那一块，不出下面那张全表。
  *
- *  **给还没建过档的人用。** 那 20 条摊在他面前时，能敲的只有 `/job-setup`
+ *  **给还没建过档的人用。** 整张表摊在他面前时，能敲的只有 `/job-setup`
  *  和 `/job-user` 两条 —— 实测 2026-08-24（拿一份空快照渲染），首屏从
  *  220px 一直到底部全是那张表，而他此刻要做的事只有一件。
  *  全集不删也不藏：建完档之后从「能敲哪些命令」那颗按钮进，一条不少。 */
 export function CommandBook(
   { groups, spineOnly = false }: { groups: CommandGroup[]; spineOnly?: boolean },
 ) {
-  const { tool, setTool } = useCodeTool();
+  const { isSlashMode, setSlashMode } = useCodeTool();
 
   return (
     <div className="cmdbook">
@@ -90,17 +90,17 @@ export function CommandBook(
         </span>
         <Radio.Group
           size="small"
-          value={tool === "claude" ? "slash" : "no_slash"}
-          onChange={(e) => setTool(e.target.value === "slash" ? "claude" : "generic")}
+          value={isSlashMode ? "slash" : "no_slash"}
+          onChange={(e) => setSlashMode(e.target.value === "slash")}
           buttonStyle="solid"
         >
           <Radio.Button value="no_slash">{"免斜杠模式"}</Radio.Button>
           <Radio.Button value="slash">{"斜杠模式"}</Radio.Button>
         </Radio.Group>
         <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-          {tool !== "claude"
-            ? "已开启免斜杠优化：复制时不带前置斜杠，直接粘贴即可运行，避免终端内置指令拦截"
-            : "已开启斜杠模式：保留前置斜杠，支持客户端快捷指令与自动补全"}
+          {isSlashMode
+            ? "已开启斜杠模式：复制出来的命令带开头的 `/`，用得上客户端的快捷指令"
+            : "已开启免斜杠模式：复制出来的命令不带开头的 `/`，直接粘进对话框就能用"}
         </span>
       </div>
       {/* 这里原来是两段开场白，第一段还是**假的**：「这一页只负责让你看得见。真正
@@ -122,7 +122,7 @@ export function CommandBook(
          "带参数只是为了少问你几轮。命令跑完，刷新本页就更新了。"}
       </p>
 
-      {/* 其余 18 条平铺，新用户不知道从哪下手。**先把日常那三条单独摆出来**——
+      {/* 其余那些平铺，新用户不知道从哪下手。**先把日常那三条单独摆出来**——
           剩下的都是「碰到那件事才用」，不该和它们平权排在一起。
           文案与 `AGENTS.md`「一次跑到头：只有三条命令」同源，脊梁是
           `/job-setup` → `/job-auto` →（你自己发）→ `/job-outcome`。改一处要改两处，

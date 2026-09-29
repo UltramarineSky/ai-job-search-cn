@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE) [![365 开源计划 #029](https://img.shields.io/badge/365%20%E5%BC%80%E6%BA%90%E8%AE%A1%E5%88%92-%23029-1f6feb)](https://github.com/rockbenben/365opensource)
 
-[⬇ 克隆开始](#快速开始) · [⌨ 全部命令](AGENTS.md#工作流索引) · [🔒 数据在哪](#你的数据在哪安不安全)
+[⬇ 克隆开始](#快速开始) · [⌨ 全部命令](workflows/INDEX.md) · [🔒 数据在哪](#你的数据在哪安不安全)
 
 ![求职总览页：可以投的岗位并排给出总分、技能分、折算年包，并直接标出下一步该敲什么](docs/images/dashboard.webp)
 
@@ -16,9 +16,9 @@
 
 ## 要装什么
 
-**一个 AI 编码工具 + Node 22.18+，就能开始。** 不用装别的——搜职位的 CLI 直接跑在 Node 上（零依赖、无编译步骤）。你的 AI 工具要是 `npm install -g` 装的（Claude Code、Codex CLI、Gemini CLI 都是），Node 就已经在了。
+**一个 AI 编码工具 + Node 22.18+，就能开始。** 不用装别的——搜职位的 CLI 直接跑在 Node 上（零依赖、无编译步骤）。**先自己确认一下 `node --version`**：各家 AI 工具的装法不一样（有的走 npm、有的是原生可执行文件），从你手上那个工具反推不出「机器上有没有 Node」，而这一条量一次就知道。
 
-> 本文命令示例按 **Claude Code** 的斜杠形式（如 `/job-auto`）书写。在 Antigravity CLI (agy)、Gemini CLI、Cursor、Codex 等其它 AI 工具中，**去掉开头的斜杠输入**（如 `job-auto`）或**直接说人话**（如「自动跑一轮」）即可触发完全相同的工作流，详见「[不用 Claude Code 也行](#不用-claude-code-也行)」。
+> 本文的命令都按正本形式写（带开头的 `/`）。你这家的工具要是不认这种写法，**去掉开头的斜杠**照样触发，详见「[不用 Claude Code 也行](#不用-claude-code-也行)」。
 
 **所以第一次用是零额外依赖的**：一个 AI 编码工具加 Node，`/job-setup` → `/job-auto` 就能拿到真实的排序名单和投递材料。
 
@@ -28,13 +28,13 @@
 |---|---|---|
 | **日常主线全程**：填资料、搜职位、打分、出评估与打招呼话术、记投递、面试准备、学习计划（具体命令见表下） | **一个 AI 编码工具 + Node 22.18+** | — |
 | 生成简历 PDF `/job-cv`（定制版）与 `/job-resume` 的校验 | + [Typst](https://typst.app) 0.13+ | 只产出 `.typ` 源文件，不编译 PDF。**`/job-apply` 不出简历**——它发主简历，定制走 `/job-cv` |
-| 求职总览页 `/job-dashboard`、四个检查脚本，以及另外七条命令各自的一环（见表下） | + Python 3.10+（流水线全程只用标准库；四个检查脚本里只有 `lint_skills.py` 要 `pip install pyyaml`），总览页还要**一次性**构建前端：`cd web && npm install && npm run build` | 总览页跑不了；那七条仍能跑，各少一环。**`/job-setup` 与 `/job-apply` 完全不受影响** |
+| 求职总览页 `/job-dashboard`、四个检查脚本，以及另外八条命令各自的一环（见表下） | + Python 3.10+（流水线全程只用标准库；四个检查脚本里只有 `lint_skills.py` 要 `pip install pyyaml`），总览页还要**一次性**构建前端：`cd web && npm install && npm run build` | 总览页跑不了；那八条仍能跑，各少一环。**`/job-apply` 完全不受影响** |
 | 简历 ATS 文本层校验 | + `pdftotext`（poppler） | 跳过校验并说明，PDF 照样产出 |
 | BOSS 直聘 / 智联 / 前程无忧 | 让你的 AI 工具能开浏览器（Claude Code 装 Claude 浏览器扩展即可，**不用装本仓库以外的东西**） | 这三家退到 `site:` 网络搜索兜底 |
 | Gmail 状态同步 / Notion 看板 | + 对应的 MCP 连接器 | 这两个命令整体跳过并说明原因 |
 | 改 CLI 代码、跑它的测试 | + [Bun](https://bun.sh)（只有开发才需要） | 用不了 `bun test`；日常使用完全不影响 |
 
-<sub>主线那一行的命令：`/job-setup`、`/job-scrape`、`/job-rank`、`/job-apply`、`/job-outcome`、`/job-interview`、`/job-upskill`。Python 那一行说的七条：`/job-rank` 的预筛淘汰与详情库、`/job-scrape` 的 JD 存库、`/job-outcome` 的催进度判定、`/job-upskill` 的缺口分格、`/job-add-template` 的模板撞名检查、`/job-auto` 的词表写回、`/job-refresh` 的刷新记录（哪几家今天刷过），以及 `/job-rank`/`/job-outcome`/`/job-gmail-sync`/`/job-interview`/`/job-user`/`/job-cv`/`/job-reset`/`/job-scrape --no-rank` 收尾刷新面板数据。</sub>
+<sub>主线那一行的命令：`/job-setup`、`/job-scrape`、`/job-rank`、`/job-apply`、`/job-outcome`、`/job-interview`、`/job-upskill`。Python 那一行说的八条：`/job-setup` 重跑「改搜索词」那节时先读每个词抓过的真实战绩（抓到多少岗、哪几个跑偏；没有它只能自己想词）、`/job-rank` 的预筛淘汰与详情库、`/job-scrape` 的 JD 存库、`/job-outcome` 的催进度判定、`/job-upskill` 的缺口分格、`/job-add-template` 的模板撞名检查、`/job-auto` 的词表写回、`/job-refresh` 的刷新记录（哪几家今天刷过），以及 `/job-rank`/`/job-outcome`/`/job-gmail-sync`/`/job-interview`/`/job-user`/`/job-cv`/`/job-reset`/`/job-scrape --no-rank` 收尾刷新面板数据。</sub>
 
 **逐步安装命令（含 Windows/macOS 差异、浏览器渠道怎么开、常见报错）见 [SETUP.md](SETUP.md)。** 环境到底缺什么，跑 `python tools/doctor.py` 会直接告诉你。
 
@@ -80,7 +80,7 @@
 
 简历照片可选——互联网/大厂投递通常可略，体制内、传统行业常要。放 `users/<你>/resume/photo.jpg`（**与你自己那份 `main.typ` 同目录**，不是仓库根的 `resume/`——Typst 不允许引用入口目录之外的文件），再在 `main.typ` 里用 `照片: "photo.jpg"` 启用，详见 [SETUP.md](SETUP.md)。
 
-完整命令清单（含 `/job-expand`、`/job-gmail-sync`、`/job-notion-sync`、`/job-add-portal`、`/job-add-template`、`/job-user`、`/job-reset`）见 [`AGENTS.md`](AGENTS.md) 的「工作流索引」。
+完整命令清单见 [`workflows/INDEX.md`](workflows/INDEX.md)——上面没展开的那几条都在里面，例如 `/job-expand`、`/job-refresh`、`/job-gmail-sync`、`/job-notion-sync`、`/job-add-template`、`/job-reset`。
 
 ### 为什么是「国内维度」
 
@@ -101,11 +101,13 @@ python tools/doctor.py   # ← 不知道该干什么就跑这条，它会告诉�
 > **没装 Python 就先跳过这一步**——它只是个导航，不是流水线的一环，直接敲 `/job-setup` 就行。装它的收益不止总览页，见上面「[要装什么](#要装什么)」里 Python 那一行。
 
 ```
---- 下一步做什么 ------------------------------------------------------
+--- 下一步做什么 --------------------------------------------------------
 你是第一次用。下一步：
 
-    claude          # 在这个目录启动 Claude Code
-    /job-setup          # 然后输入这条，它会问你一串问题
+    /job-setup          # 在你的 AI 编码工具里输入这条，它会问你一串问题
+
+先在这个目录下启动你的工具——工作流、命令入口、你的资料都在这个目录里，
+从别的目录启动它看不到。用的是哪一家都一样。
 ```
 
 **`/job-setup` 不必一次答完。** 它分四轮问，每轮问完停下来告诉你现在能做什么：答完第一轮（目标城市 + 岗位关键词，约 3 分钟）就够**搜岗**了，第二轮够**排序打分**，最费神的「你明确不做/不会什么」留到**出投递材料**时才问 —— 这三档都由 `/job-auto` 一条命令跑，它会按你资料填到哪一档跑到哪一步。跑一次 `python tools/doctor.py` 就知道现在卡在哪一轮、缺哪几项。
@@ -120,7 +122,7 @@ users/<你的名字>/documents/cv/     ← 简历放这里（<你的名字> 见 
 
 > 目录要等 `/job-setup` 建好用户之后才有。没有简历也能开始——那时它改成直接问你。
 
-启动 Claude Code 之后，它自己也会先跑一次自检并把下一步告诉你，所以你不必记这条命令。**日常只有三条命令**，中间夹着全流程唯一要你自己做的那一步：
+打开你这家的工具之后，它自己也会先跑一次自检并把下一步告诉你，所以你不必记这条命令。**日常只有三条命令**，中间夹着全流程唯一要你自己做的那一步：
 
 | 顺序 | 命令 | 会发生什么 | 大概多久 |
 |---|---|---|---|
@@ -129,7 +131,7 @@ users/<你的名字>/documents/cv/     ← 简历放这里（<你的名字> 见 
 | — | **你自己去招聘网站把材料发出去** | 全流程唯一要人的一步。话术和简历都备好了，点发送的是你——框架不发邮件、不提交表单 | 看你投几个 |
 | 3 | `/job-outcome <公司>` | 投完记一笔：约面了 / 挂了 / 没下文。**后面的催进度、备面、谈薪全从这一笔长出来**，不记就都起不来 | 每个岗几秒 |
 
-> 中间三段（找岗、打分、出材料）也可以单独敲：`/job-scrape`、`/job-rank`、`/job-apply`（[全部命令](AGENTS.md#工作流索引)）。但接缝已经焊死，**默认路径就是上面这条**。
+> 中间三段（找岗、打分、出材料）也可以单独敲：`/job-scrape`、`/job-rank`、`/job-apply`（[全部命令](workflows/INDEX.md)）。但接缝已经焊死，**默认路径就是上面这条**。
 
 之后就是「`/job-auto` 补货 → 你自己发 → `/job-outcome` 记账」的循环。另外三条按需加：**猎头或 HR 直接把一个岗发给你时**用 `/job-apply <职位链接>`（把链接、或他发来的那整段职位描述粘进来，只评这一个，不用等下一轮抓取）；约到面试加一条 `/job-interview <公司>`，拿到 offer 加一条 `/job-offer <公司>`；其余见下面「[它能做什么](#它能做什么)」。
 
@@ -206,21 +208,21 @@ node .agents/skills/liepin-search/cli/src/cli.ts detail "<职位URL>" --format p
 
 ## 不用 Claude Code 也行
 
-本仓库不绑定单一 AI 工具。任何 agent（Claude Code、Antigravity CLI、Codex CLI、Gemini CLI、Cursor 等）从根目录 [`AGENTS.md`](AGENTS.md) 进入：那里有角色定义、多用户路径解析、安全铁律、全部工作流的索引，以及「能力 → 各工具」对照表。
+本仓库不绑定单一 AI 工具。任何 agent（Claude Code、Antigravity CLI、Codex CLI、Qoder、Qwen Code 等）从根目录 [`AGENTS.md`](AGENTS.md) 进入：那里有角色定义、多用户路径解析、安全铁律，以及「能力 → 各工具」对照表；**全部命令的索引在 [`workflows/INDEX.md`](workflows/INDEX.md)**，逐家的接入面在 [`docs/tool-entries.md`](docs/tool-entries.md)。
 
 换工具后功能不变，只是有些能力（比如驱动浏览器）各家实现不同，届时会退到能用的那条路并告诉你。
 
-### 在不同 AI 工具中怎么执行命令（避免 Unknown command）
+### 在不同 AI 工具中怎么执行命令
 
-- **在 Claude Code 中**：支持带斜杠的快捷命令（如 `/job-auto`、`/job-rank`、`/job-apply <职位链接>`），输入时支持 Tab 自动补全。
-- **在 Antigravity CLI (agy)、Gemini CLI、Cursor、Codex 等终端工具中**：
-  - **去掉开头的斜杠输入**：直接输入 `job-auto`、`job-rank`、`job-apply <职位链接>` 即可。
-    > **为什么不要带斜杠？** 许多终端命令行客户端（如 agy）将开头的 `/` 默认为客户端自身内置命令（如 `/help`、`/clear`、`/config` 等）。直接输入 `/job-auto` 会被终端客户端直接拦截并提示 `Unknown command: /job-auto`。去掉前面的斜杠即可顺利交由底层 AI Agent 识别并执行。
-  - **直接用自然语言（推荐）**：说求职者的人话即可，例如「自动跑一轮」、「帮我给手上的岗位打分」、「投这个岗 <链接>」、「刷一下在线简历」。本仓库在 `.agents/skills/` 下配置了完整的 Agent 技能与触发词，AI 会自动识别意图并执行完全相同的工作流。
+- **在 Claude Code、Antigravity CLI (agy)、MiMo、Qoder、Qwen Code 里**：带斜杠就是原生形态（`/job-auto`、`/job-rank`、`/job-apply <职位链接>`），五家都把每个技能注册成 `/<名>`。
+- **在 Codex CLI 里**：去掉开头的斜杠，直接输入 `job-auto`、`job-rank`、`job-apply <职位链接>`。
+  > **只有这一家要去掉。** 它把开头的 `/` 留给自己的内置指令——二进制里那句原文是 `Unrecognized command '/-'. Type "/" for a list of supported commands.`。逐家的实测出处与分档的判据正本在 `docs/tool-entries.md`（那张表就是 `tools/doctor.py` 的 `COMMAND_SYNTAX`）。
+- **在认不出来的助手与编辑器内置助手里**（Cursor 等）：同样给去斜杠的形式——认不出来就落最保守那一档，见上条。
+- **直接用自然语言**：说求职者的人话即可，例如「自动跑一轮」、「帮我给手上的岗位打分」、「投这个岗 <链接>」、「刷一下在线简历」。本仓库在 `.agents/skills/` 下配置了完整的 Agent 技能与触发词，AI 会自动识别意图并执行完全相同的工作流。
 
-**那 `.claude/` 是干什么的？** 它是 Claude Code 的接入件，不是本仓库的一部分逻辑：`.claude/commands/` 是 Claude Code 找 slash 命令的**固定路径**（18 个 stub，每个 2 行，只写「读取并严格执行 `workflows/<名>.md`」）；`.claude/skills/` 是它找自动触发技能的固定路径（3 份壳，只有触发词和工具权限）；`.claude/settings.json`是它的权限预批清单。三者加上 `CLAUDE.md` 一共约 150 行，**没有一行正文**——正文全部在 `workflows/`，谁都读得到。
+**那 `.claude/` 是干什么的？** 它是 Claude Code 的接入件，不是本仓库的一部分逻辑：`.claude/skills/` 是 Claude Code 找命令与自动触发技能的**固定路径**（每条命令一份壳，由 `tools/gen_entries.py` 从 `workflows/INDEX.md` 与 `tools/_entries.py` 生成，外加一份手写的求职咨询壳；壳里只有触发词和工具权限，正文一句「读取并严格执行 `workflows/<名>.md`」）；`.claude/settings.json`是它的权限预批清单。两者加上 `CLAUDE.md` **没有一行正文**——正文全部在 `workflows/`，谁都读得到。原来那 19 份 `.claude/commands/` 命令 stub 已经删掉：斜杠命令这一层壳两族都给，不再需要第二落点。**这里不写壳有几份**——加一条命令就多一份壳，写死的数字没人钉着只会变成假话（判据与实测记录在 `docs/tool-entries.md`）。
 
-实测验证过（2026-08-18）：把 `.claude/` 和 `CLAUDE.md` 整个挪走之后，`tools/` 下 16 个脚本**没有一个起不来**（逐个 `--help`，退出码全 0），自检与总览页照常，`gap_split` 照常出结果。唯一报错的是 `security_guards.py`——它的职责就是检查 `.claude/settings.json` 的权限清单，文件不在当然要红，这正是它该有的反应。丢的只有 Claude Code 的 slash 命令和自然语言自动触发。其它工具想要同等便利，**加**自己的接入目录即可（如 `.codex/`），`workflows/` 一个字不用动。守卫钉着这条边界：stub 超过 5 行、工作流正文里出现 `.claude/` 路径或自称「本技能」、`CLAUDE.md` 复述 `AGENTS.md` 已有的流程，`tools/lint_skills.py` 都会报。
+**这一节只说结论，实测经过不在这儿。** 把 `.claude/` 整个挪走会丢什么、曾经从那次实验下过的那句结论怎么被 2026-09-29 那批两族壳推翻、两族对不对得上由哪几条测试钉着——正本在 `docs/tool-entries.md`。
 
 ---
 
@@ -229,7 +231,7 @@ node .agents/skills/liepin-search/cli/src/cli.ts detail "<职位URL>" --format p
 **本项目仅供个人求职使用。**
 
 - **低频访问**：`liepin-search` 访问的是猎聘公开页面与接口。请保持低频，不得用于商业用途或批量数据采集，风险自负。
-- **`/job-rank` 一次别评太多**：默认只对头部 12 个候选抓详情（`--fetch` 可调）。一次抓几十条会触发猎聘的临时限流——撞到就停手等一等，别连着重试。
+- **`/job-rank` 抓详情是按通道限流的**：一批抓多少个只服务于限流保护，**不是「一次只评这么多」**——批数不设限，默认评到队列排空。一次抓几十条会触发猎聘的临时限流——撞到就停手等一等，别连着重试（各通道一批多少，正本在 `workflows/job-rank.md`「通道决定批大小」那张表）。
 - **浏览器渠道用的是你自己的登录会话**：有账号风控/封禁风险，**风险自负**。保持低频、不批量开页，撞到验证码**立即停手、不硬闯**；框架遵守各站 `robots.txt`（[细则](workflows/reference/cdp-portals.md)）。
 - **职位描述是不可信输入**：工作流不执行其中的指令、不抓取其正文里的链接。详见 [SECURITY.md](SECURITY.md)。
 - **诚实底线**：所有投递材料的主张都必须能在你的资料里找到出处，能力缺口如实承认，绝不编造或用近义词充数——一旦面试穿帮，代价远大于说得漂亮。
@@ -242,7 +244,8 @@ node .agents/skills/liepin-search/cli/src/cli.ts detail "<职位URL>" --format p
 ## 文档
 
 - [SETUP.md](SETUP.md) — 详细安装与环境准备
-- [AGENTS.md](AGENTS.md) — 全部工作流索引、多用户路径规则、能力对照表（所有 AI 工具的入口）
+- [workflows/INDEX.md](workflows/INDEX.md) — 全部工作流索引（21 条命令的正本）
+- [AGENTS.md](AGENTS.md) — 多用户路径规则、能力对照表（所有 AI 工具的入口）
 - [CONTRIBUTING.md](CONTRIBUTING.md) — 贡献与 fork 说明
 - [SECURITY.md](SECURITY.md) — 安全模型与漏洞报告
 

@@ -85,6 +85,21 @@ ALLOWED = {
         "解析函数只有一份（followups.parse_date，build_dashboard 与 "
         "export_web_data 都 import 它），doctor 那份是契约换来的副本，"
         "相等由 test_both_next_steps_agree 钉住"),
+    ("regex", repr(r"```(?:bash|sh|shell|console)\n(.*?)```") + " [re.S]"): (
+        {"_entries.py:_FENCE", "lint_skills.py:_FENCE_CMD"},
+        "「什么算一段 bash 围栏」这一个判断。lint_skills.py 必须能**单独拷进临时目录**"
+        "跑（test_cli_contract.CopyableToolsStayStandalone），与 doctor 同处境："
+        "正本 import 不过去，只能各留一份。相等由本文件 "
+        "test_the_bash_fence_pattern_matches 钉住（模式与旗标都比）。"
+        "tests/test_skill_permissions_cover_its_workflow.py 里的第三份由 Task 5 删掉"
+        "（改为 import _entries.commands_in），那张网只看 tools/，看不见它"),
+    ("tuple", "('.claude', '.agents')"): (
+        {"_entries.py:SHELL_FAMILIES", "lint_skills.py:SHELL_FAMILIES"},
+        "两族技能壳的根。同一个「必须能单独拷进临时目录跑」的契约（上面那条 "
+        "CopyableToolsStayStandalone）：正本在 lint 跑起来的那个临时目录里不存在，"
+        "import 不过去，只能各留一份。相等由本文件 test_the_shell_families_match "
+        "钉住 —— 两边一旦分叉，lint 会去查一族根本不存在的外壳，而生成器真正写的"
+        "那两族没人查"),
 }
 
 
@@ -239,6 +254,48 @@ class ThePinsActuallyHold(unittest.TestCase):
         import followups
         self.assertEqual(tuple(doctor.DATE_FORMATS),
                          tuple(followups._DATE_FORMATS))
+
+    def test_the_bash_fence_pattern_matches(self):
+        """两份「什么算一段 bash 围栏」必须认同一段文本。
+
+        旗标也要比：少了 `re.S`，`(.*?)` 不再跨行，围栏里第二条命令就悄悄取不到
+        —— 派生出来的壳缺一条权限，而缺权限的症状是「跑到那一步才要用户手批」。
+        """
+        import _entries
+        import lint_skills
+        self.assertEqual(_entries._FENCE.pattern, lint_skills._FENCE_CMD.pattern)
+        self.assertEqual(_entries._FENCE.flags, lint_skills._FENCE_CMD.flags)
+
+    def test_the_shell_families_match(self):
+        """两份「两族技能壳的根」必须是同样两个目录，顺序也算。
+
+        为什么会有第二份：`lint_skills.py` 要能单独拷进临时目录跑，正本 import 不过去。
+        分叉的后果不是报错而是**查错地方** —— 生成器往 `.claude` + `.agents` 落两族，
+        而 lint 若写成别的两个名字，它那条「两族壳集合一致」守卫就在数两个空目录，
+        数完永远相等。
+        """
+        import _entries
+        import lint_skills
+        self.assertEqual(_entries.SHELL_FAMILIES, lint_skills.SHELL_FAMILIES)
+
+    def test_the_hand_written_shells_match(self):
+        """lint 那份「手写、不生成的壳」名单必须与正本同一个集合。
+
+        同一个「不能 import 兄弟模块」的契约，同一条手工钉法。**它不在 ALLOWED 里**
+        不是漏登记：上面那张网只收 ≥2 项的容器（`all_homes()` 的 `len(v) >= 2`），
+        今天只有一个名字的 frozenset 根本不进网 —— 把它的指纹写进例外表反而会撞
+        `test_the_table_does_not_rot`（表里不许留已经不成对的例外）。所以照
+        `test_the_shell_families_match` 的样子直接比。
+
+        分叉的后果与 SHELL_FAMILIES 那条同型但更安静：lint 的名单若是空的，那条
+        「两族都有壳、没有正文」的判据会对真实存在的 `job-application-assistant`
+        路由壳报红（ healthy 仓库红，改法是去删正则而不是补名单）；名单若多出
+        一个还在生成的命令名，那条判据就对**它**永远沉默。
+        """
+        import _entries
+        import lint_skills
+        self.assertEqual(set(_entries.HANDWRITTEN_NAMES),
+                         set(lint_skills.HANDWRITTEN_SHELLS))
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lint the repo's skill, command, and settings files.
+"""Lint the repo's skill shells and settings file.
 
 Run from anywhere: python tools/lint_skills.py
 
@@ -10,6 +10,19 @@ Checks:
   exact-match space form `Bash(<cmd> *)` that no real invocation ever matches
 - `allowed-tools` entries of the form `Bash(bun run <path>:*)` point at files
   that exist (skill paths resolve relative to the repo root and to .agents/)
+- Every workflow has a skill shell in **both** families, and the two families
+  hold the same set of shells. `tools/gen_entries.py` writes both in one run, so
+  a shell missing from one family is that generator having run halfway
+- Both directions: a shell present in both families with no `workflows/<name>.md`
+  is an entry into an empty room (the per-workflow loop above cannot see it, and
+  the family-set guard only compares the two families to each other). Exempts the
+  hand-written routing shell - `HANDWRITTEN_SHELLS`
+- `.claude/commands/` holds **nothing**: command stubs were deleted once skills
+  started providing the slash-command syntax in every tool. A file appearing
+  there after this is a hand-written second landing spot for a rule, which
+  AGENTS.md forbids ("唯一权威来源") - the index it should have gone into is
+  `workflows/INDEX.md`
+- .claude/settings.json is valid JSON with a permissions.allow list
 
 NOT checked here (deliberately, and where it lives instead):
 - Whether `allowed-tools` *covers* everything the skill's workflow actually runs
@@ -19,8 +32,6 @@ NOT checked here (deliberately, and where it lives instead):
   precisely because nothing asked the second question.
 - Whether a `python tools/x.py --flag` cited in a workflow exists and has that
   flag -> tests/test_cross_references_resolve.py.
-- Every .claude/commands/*.md starts with a `# /<name>` title
-- .claude/settings.json is valid JSON with a permissions.allow list
 
 Exit code 0 on success, 1 with a failure list otherwise.
 """
@@ -161,13 +172,6 @@ def check_skill(path: Path) -> None:
                     errors.append(f"{rel(path)}: allowed-tools references a missing file: {target}")
 
 
-def check_command(path: Path) -> None:
-    lines = path.read_text(encoding="utf-8").lstrip().splitlines()
-    first = lines[0] if lines else ""
-    if not first.startswith("# /"):
-        errors.append(f"{rel(path)}: command file must start with a '# /<name>' title (found: {first[:50]!r})")
-
-
 def check_settings() -> None:
     path = ROOT / ".claude" / "settings.json"
     try:
@@ -210,14 +214,16 @@ def check_misplaced_activation() -> None:
 NEUTRALITY_FORBIDDEN = ("WebFetch", "WebSearch", "AskUserQuestion",
                         "mcp__", "Agent tool", "$ARGUMENTS", "allowed-tools",
                         # Workflow bodies are the tool-neutral half: AGENTS.md
-                        # tells every other tool to "直接按「工作流索引」读取并执行
-                        # 对应文件". So a body must not talk about itself as a
-                        # *skill* - that is one tool's packaging, and phrases like
-                        # "in this skill directory" send the reader somewhere that
-                        # only exists under .claude/. Measured 2026-08-18: five
-                        # such phrases survived the extraction of the bodies out of
-                        # the skills, and one of them pointed at a template path
-                        # that had not existed since the move.
+                        # sends every other tool to the index (「直接按「工作流索引」
+                        # 读取并执行对应文件」, whose table lives in
+                        # workflows/INDEX.md since 2026-09-29). So a body must not
+                        # talk about itself as a *skill* - that is one tool's
+                        # packaging, and phrases like "in this skill directory"
+                        # send the reader somewhere that only exists under
+                        # .claude/. Measured 2026-08-18: five such phrases
+                        # survived the extraction of the bodies out of the skills,
+                        # and one of them pointed at a template path that had not
+                        # existed since the move.
                         "this skill", "本技能",
                         # Same reason, harder failure: a `.claude/…` path in a body
                         # is unreachable for anyone not running Claude Code.
@@ -248,6 +254,10 @@ _ACTIVE_TEMPLATE_BLOCK = re.compile(
 # 正文里纯文字提到这个标记名不会命中任何一条（要求的是标记形状，不是裸 token）。
 _ACTIVE_TEMPLATE_MARKER = re.compile(r"<!--\s*BEGIN ACTIVE-TEMPLATE")
 _ACTIVE_TEMPLATE_END = re.compile(r"<!--\s*END ACTIVE-TEMPLATE")
+# 指向 workflows 的悬空指针。整条字面量**只在这里写一次**：它原先在两处各抄一份
+# （索引节内扫一遍、AGENTS.md 全文再扫一遍），而这两处的范围本来就不同，抄件飘掉的
+# 症状是「reference/*.md 只在其中一处看得见」——正是下面那条注释记着的失误。
+_DANGLING_WF = re.compile(r"workflows/([A-Za-z0-9_/-]+\.md)")
 _INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
 
 
@@ -276,44 +286,100 @@ def _strip_code(text: str) -> str:
         elif fence and run >= opener and not s[run:].strip():
             opener = None                     # 合法闭合；其余行一律丢弃
     return _INLINE_CODE_RE.sub("", "\n".join(keep))
-STUB_MAX_LINES = 5
+
+#: 两族技能壳的根。`.claude/skills/` 是 Claude Code 的运行时发现根，
+#: `.agents/skills/` 是其余各家读的（2026-09-30 逐家核过：agy / Codex / Qoder /
+#: Qwen Code / MiMo Code 都扫这里）。
+#: 一份入口在两族各落一次，由 tools/gen_entries.py 一次生成 —— 与 tools/_entries.py
+#: 的 SHELL_FAMILIES 同一个值（这里内联写死，是因为本文件会被测试单独拷进临时目录
+#: 运行，不能 import 仓库里的任何兄弟模块）。
+SHELL_FAMILIES = (".claude", ".agents")
+
+#: 手写、不生成的壳 —— 与 tools/_entries.py 的 HANDWRITTEN_NAMES 同一个值，同一个
+#: 「不能 import 兄弟模块」的理由。路由壳 `job-application-assistant` 没有对应的工作流
+#: 正文（它是「聊到求职就自动接管」的入口，正文就是它自己），所以下面那条
+#: 「壳要有正文」的反向检查要放行它。两边相等由
+#: tests/test_one_value_one_home.py::test_the_hand_written_shells_match 钉住 ——
+#: 那张按值扫的网只收 ≥2 项的容器，单名集合从网眼里漏过，所以手工钉。
+HANDWRITTEN_SHELLS = frozenset({"job-application-assistant"})
+
+
+def command_shells(fam: str) -> set:
+    """这一族里**命令壳**的目录名，不含可插拔的渠道技能。
+
+    渠道技能（判据：有 `cli/src/cli.ts`）只装在 `.agents` 族，把它算进「两族该一样」
+    会让一条本来正常的仓库立刻红，而且红的还是没坏的那半边。判据正本在
+    `docs/tool-entries.md` 的「但 `.agents/skills/` 下不只有渠道」那节，
+    `/job-add-portal --list` 与这里同一份。
+
+    ⚠️ 这里**只**摘渠道，不摘「对不上工作流的壳」：这个集合同时供着两族集合守卫，
+    在谓词里过滤 = 悬空壳两处都看不见。那一向由 `check_workflow_layout()` 单独报。
+    """
+    skills = ROOT / fam / "skills"
+    if not skills.is_dir():
+        return set()
+    return {d.name for d in skills.iterdir()
+            if d.is_dir() and (d / "SKILL.md").is_file()
+            and not (d / "cli" / "src" / "cli.ts").is_file()}
 
 
 def check_workflow_layout() -> int:
     wf_dir = ROOT / "workflows"
     if not wf_dir.is_dir():
         return 0  # 迁移前的旧布局 fork：整组检查不适用
-    commands_dir = ROOT / ".claude" / "commands"
-    workflows = sorted(wf_dir.glob("*.md"))
+    # INDEX.md 是索引正本本身，不是一条命令工作流：它不需要技能壳入口，
+    # 也不在自己的索引里登记自己（2026-09-29 索引表从 AGENTS.md 搬进来那天起）。
+    # 其余对 workflows/*.md 的逐文件检查（入口、中立性、B2）照旧覆盖它——剥掉
+    # 的只是「按命令工作流算的那几笔」。
+    workflows = sorted(wf for wf in wf_dir.glob("*.md") if wf.stem != "INDEX")
     if not workflows:
         errors.append("workflows/: directory exists but holds no *.md workflow files")
-    for cmd in sorted(commands_dir.glob("*.md")):
-        text = cmd.read_text(encoding="utf-8")
-        target = f"workflows/{cmd.stem}.md"
-        if target not in text:
-            errors.append(f"{rel(cmd)}: stub must reference {target}")
-        if not (wf_dir / f"{cmd.stem}.md").is_file():
-            errors.append(f"{rel(cmd)}: stub points at {target}, which does not exist")
-        non_empty = [l for l in text.splitlines() if l.strip()]
-        if len(non_empty) > STUB_MAX_LINES:
-            errors.append(
-                f"{rel(cmd)}: stub has {len(non_empty)} non-empty lines "
-                f"(max {STUB_MAX_LINES}) - workflow content belongs in {target}")
+    # 命令 stub 已在「技能壳覆盖斜杠命令」之后整体删除（19 份 .claude/commands/*.md）。
+    # 这里反过来盯「别再长出来」：生成器接管之后，那个目录里再冒出文件，就是有人
+    # 手写了一个命令的第二落点 —— AGENTS.md 只允许一个权威来源。
+    # 原来那三条按 stub 形状判的检查（首行 `# /名`、必须指到 workflows/、不超过 5 行）
+    # 一起作废：入口文件本身不该存在，它写成什么样都不用去看了。
+    cmd_dir = ROOT / ".claude" / "commands"
+    for p in sorted(cmd_dir.glob("*.md")) if cmd_dir.is_dir() else []:
+        errors.append(
+            f".claude/commands/{p.name}: command stubs are gone - entries are "
+            "generated into .claude/skills/ and .agents/skills/ by "
+            "tools/gen_entries.py; add the command to workflows/INDEX.md instead")
     for wf in workflows:
-        stub = commands_dir / f"{wf.stem}.md"
-        if stub.is_file():
-            continue
         # 壳目录与工作流同名。原来这里有一张 `{"scrape": "job-scraper", …}` 的
         # 手工映射表，存在的唯一理由就是两边名字对不上；命令统一加 job- 前缀后
         # 它退化成恒等映射，留着只会在下次加壳时忘了登记（漏登记的症状是「工作流
         # 没有入口」这种看起来像真缺陷的假报警）。同名即接线，不再有第二处要维护。
-        shell = ROOT / ".claude" / "skills" / wf.stem / "SKILL.md"
-        if shell.is_file() and \
-                f"workflows/{wf.stem}.md" in shell.read_text(encoding="utf-8"):
-            continue
-        errors.append(
-            f"workflows/{wf.stem}.md: no Claude entry point "
-            f"(.claude/commands/{wf.stem}.md stub, or a skill shell referencing it)")
+        #
+        # 两族**分别**验，不是「任一族有就算过」：少一族 = 生成器只跑了一半，
+        # 而那正好是让某一家工具敲不到这条命令的那种半坏状态。
+        for fam in SHELL_FAMILIES:
+            shell = ROOT / fam / "skills" / wf.stem / "SKILL.md"
+            if not shell.is_file():
+                errors.append(
+                    f"workflows/{wf.stem}.md: no skill shell in {fam}/skills/"
+                    f"{wf.stem}/ - run `python tools/gen_entries.py`")
+                continue
+            # 壳在、但正文不提它那份工作流 = 指针断了。生成物不会漂（漂了
+            # `--check` 就红），手改过的壳会：这条留给「改了壳没跑生成器」那一次。
+            if f"workflows/{wf.stem}.md" not in shell.read_text(
+                    encoding="utf-8", errors="replace"):
+                errors.append(
+                    f"{fam}/skills/{wf.stem}/SKILL.md: shell does not reference "
+                    f"workflows/{wf.stem}.md - the shell is the entry, the body is "
+                    "the workflow; run `python tools/gen_entries.py`")
+    # 反方向：两族各有一份壳、却没有 workflows/<名>.md —— 入口把用户领进一间空房间。
+    # 上面那个循环是从工作流这一侧走的，看不见它；main() 里那条两族集合守卫只比
+    # 两族彼此，两边同时多出来一份壳时它照样绿。
+    # 不能把过滤塞进 command_shells()：那个谓词同时供着集合守卫，一过滤，悬空壳在
+    # 两处都变成隐形，检查从「少一格」退成「整条没了」。
+    stems = {wf.stem for wf in workflows}
+    for fam in SHELL_FAMILIES:
+        for name in sorted(command_shells(fam) - stems - HANDWRITTEN_SHELLS):
+            errors.append(
+                f"{fam}/skills/{name}/SKILL.md: no workflows/{name}.md - the shell is "
+                "an entry into an empty room; a new command goes into "
+                "workflows/INDEX.md, then run `python tools/gen_entries.py`")
     bodies = []
     for wf in sorted(wf_dir.rglob("*.md")):
         # bytes 读：read_text 走通用换行，会把孤立 \r 也当成换行，于是同一份内容
@@ -334,8 +400,9 @@ def check_workflow_layout() -> int:
                 # 两类禁忌，两种改法。给「this skill」提示「去查能力对照表」
                 # 是答非所问——它要改的是**自称**，不是工具名。
                 if token in ("this skill", "本技能", ".claude/"):
-                    hint = ("workflow bodies are the tool-neutral half (AGENTS.md: "
-                            "其它工具「直接按「工作流索引」读取并执行对应文件」) - "
+                    hint = ("workflow bodies are the tool-neutral half: AGENTS.md "
+                            "routes every other tool to the command index (its table "
+                            "is workflows/INDEX.md, its heading 「工作流索引」) - "
                             "say 'this workflow'/'这条工作流', and point at a path "
                             "every tool can reach")
                 else:
@@ -383,24 +450,38 @@ def check_workflow_layout() -> int:
     else:
         agents_text = agents_md.read_text(encoding="utf-8")
         actual = {wf.stem for wf in workflows}
-        # B2: 「是否已登记入索引」只看「## 工作流索引」一节的正文（到下一个 ^## 或文件
-        # 结尾为止），不看全文——否则工作流在角色段/能力表降级列里被提一句也会被误判为
-        # 「已登记」。收尾用 (?=^## |\Z)：少了 \Z 分支，索引恰好是最后一节时整段匹配不
-        # 上，会对一个明明存在的标题报 missing。
-        index_match = re.search(r"^## 工作流索引\s*$(.*?)(?=^## |\Z)", agents_text, re.M | re.S)
+        # B2: 「是否已登记入索引」只看 `workflows/INDEX.md` 里「## 工作流索引」一节的
+        # 正文（到下一个 ^## 或文件结尾为止），不看全文——否则工作流在角色段/能力表
+        # 降级列里被提一句也会被误判为「已登记」。收尾用 (?=^## |\Z)：少了 \Z 分支，
+        # 索引恰好是最后一节时整段匹配不上，会对一个明明存在的标题报 missing。
+        # 正本原来在 AGENTS.md；2026-09-29 索引表搬进 workflows/INDEX.md，锚点跟着搬，
+        # 判据一个字没松：索引文件缺了那节标题，双向完整性无从核验，照样红。
+        index_src = ROOT / "workflows" / "INDEX.md"
+        index_text = (index_src.read_text(encoding="utf-8", errors="replace")
+                      if index_src.is_file() else "")
+        index_match = re.search(r"^## 工作流索引\s*$(.*?)(?=^## |\Z)", index_text, re.M | re.S)
         if index_match is None:
             errors.append(
-                "AGENTS.md: missing '## 工作流索引' section header - cannot verify the "
+                "workflows/INDEX.md: missing '## 工作流索引' section header - cannot verify the "
                 "bidirectional workflow index")
         else:
+            # 「登记入索引」这一判定**故意只用顶层名**的正则：`reference/04-job-evaluation.md`
+            # 那样的共享资料不是命令，不该出现在索引表里。下面那两处「指针指不指得到文件」
+            # 用的是 _DANGLING_WF（认斜杠），三处判的是三件事。
             referenced = set(re.findall(r"workflows/([A-Za-z0-9_-]+)\.md", index_match.group(1)))
             for stem in sorted(actual - referenced):
-                errors.append(f"AGENTS.md: workflow not in the index: workflows/{stem}.md")
+                errors.append(f"workflows/INDEX.md: workflow not in the index: workflows/{stem}.md")
+            # 「索引行指向不存在的文件」这一向，原来由下面那段对 AGENTS.md 全文的悬空
+            # 指针扫描顺带覆盖（表当时就住在 AGENTS.md 里）。表搬走后必须跟着搬，
+            # 否则索引里写一个不存在的 workflows/x.md 只剩测试网兜着、lint 全盲。
+            for target in sorted(set(_DANGLING_WF.findall(index_match.group(1)))):
+                if not (wf_dir / target).is_file():
+                    errors.append(f"workflows/INDEX.md: references missing workflows/{target}")
         # 悬空指针反过来要看**全文**，且必须覆盖 workflows/reference/*.md：角色段写着
         # 「按 `workflows/reference/04-job-evaluation.md` 评估职位」，而只匹配顶层名的
-        # 正则对它完全不可见——那恰恰是这段注释给出的动机本身。只有上面「登记入索引」
-        # 那一判定限于索引节内。
-        for target in sorted(set(re.findall(r"workflows/([A-Za-z0-9_/-]+\.md)", agents_text))):
+        # 那个正则（上面 `referenced` 用的）根本看不见它——那恰恰是这段注释给出的
+        # 动机本身。只有「登记入索引」那一判定限于索引节内。
+        for target in sorted(set(_DANGLING_WF.findall(agents_text))):
             if not (wf_dir / target).is_file():
                 errors.append(f"AGENTS.md: references missing workflows/{target}")
         lower_agents = agents_text.lower()
@@ -545,22 +626,39 @@ def main() -> int:
     # 这个脚本会被测试**单独拷进一个临时目录**跑（见 tests 里的 shutil.copy），
     # 拷过去的只有它自己，任何跨文件 import 都会在那边直接 ImportError。
     import argparse
-    argparse.ArgumentParser(description="检查 skill/命令 stub 与 workflows 的接线是否一致").parse_args()
+    argparse.ArgumentParser(description="检查两族技能壳与 workflows 的接线是否一致").parse_args()
     # `--help` 与未知参数在上一行就已经由 argparse 处理完并退出了，所以这道
     # 依赖检查放在它**后面** —— 缺 pyyaml 不该让「问一句怎么用」也失败。
     if yaml is None:
         sys.exit(_NEED_YAML)
-    skills = sorted(ROOT.glob(".claude/skills/*/SKILL.md")) + sorted(ROOT.glob(".agents/skills/*/SKILL.md"))
-    commands = sorted((ROOT / ".claude" / "commands").glob("*.md"))
+    # 两族都扫。原来这里只扫 `.claude/skills/`，而 `.agents/skills/` 是其余各家读的：
+    # 一族的 frontmatter 坏了、另一族的没查，等于半个仓库没人看。
+    skills = [p for fam in SHELL_FAMILIES
+              for p in sorted((ROOT / fam / "skills").glob("*/SKILL.md"))]
     if not skills:
         errors.append("no SKILL.md files found - glob roots are wrong or the tree moved")
-    if not commands:
-        errors.append("no command files found under .claude/commands/")
+
+    # 两族该是**同一批**壳：生成器一次写两族，少一族就是它只跑了一半。
+    # 这条比「逐个工作流报缺壳」更早说清发生过什么（一次少 21 份，而不是 21 条各自
+    # 像独立缺陷），也覆盖反方向：只在某一族多出来的壳（手写漏跑生成器）。
+    # 渠道技能不在这个集合里 —— 它只装在 `.agents` 族，见 command_shells()。
+    shells = {fam: command_shells(fam) for fam in SHELL_FAMILIES}
+    left, right = SHELL_FAMILIES
+    if shells[left] != shells[right]:
+        gaps = []
+        for fam, other in ((left, right), (right, left)):
+            absent = sorted(shells[other] - shells[fam])
+            if absent:
+                gaps.append(f"{fam}/skills lacks {', '.join(absent)}")
+        errors.append(
+            f"skill families disagree on the shell set: {len(shells[left])} in "
+            f"{left}/skills vs {len(shells[right])} in {right}/skills"
+            + (f" ({'; '.join(gaps)})" if gaps else "")
+            + " - entries are generated into both families by tools/gen_entries.py; "
+              "run `python tools/gen_entries.py`")
 
     for skill in skills:
         check_skill(skill)
-    for command in commands:
-        check_command(command)
     check_settings()
     check_misplaced_activation()
     check_entry_points()
@@ -572,8 +670,10 @@ def main() -> int:
         for err in errors:
             print(f"  - {err}")
         return 1
-    print(f"lint_skills: OK ({len(skills)} skills, {len(commands)} commands, "
-          f"{n_workflows} workflows, settings.json)")
+    print(f"lint_skills: OK ({n_workflows} workflows, "
+          f"{len(shells[left])} shells in {left}/skills, "
+          f"{len(shells[right])} in {right}/skills, "
+          f"{len(skills)} SKILL.md parsed, settings.json)")
     return 0
 
 

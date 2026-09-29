@@ -127,14 +127,13 @@ docs/superpowers/
 # 这里放的东西按设计就是「不该被别人看到、但本机需要」的那一类。
 .private/
 
-# Claude 那三个技能壳被工具**镜像**到 `.agents/skills/` 下的副本：不是仓库内容。
-# 正本在 `.claude/skills/{job-application-assistant,job-scrape,job-upskill}/SKILL.md`，
-# 这三份与它字节相同（2026-08-24 由所在的 AI 工具自动生成，不是谁手写的）。
-# 收进版本库就是本仓库最反对的那件事：一条规则两个落点，之后各自长出对方没有的一条。
-# `.agents/skills/` 本身仍然照常入库 —— 那儿放的是可插拔平台技能（liepin-search）。
-.agents/skills/job-application-assistant/
-.agents/skills/job-scrape/
-.agents/skills/job-upskill/
+# `.agents/skills/` 下的技能壳与 `.claude/skills/` 逐字相同，两族都由
+# tools/gen_entries.py 生成、都入库。原来这里忽略三份「镜像副本」，理由是
+# 「一条规则两个落点，之后各自长出对方没有的一条」——生成器把这条理由接了过去：
+# 落点仍是两个，但正本只有一个（workflows/INDEX.md + tools/_entries.py），
+# CI 跑 --check，漂了就红。
+# `.agents/skills/` 本身一直照常入库 —— 那儿还放可插拔平台技能（liepin-search）。
 .workbuddy/
+.qoder*
 promot*
 

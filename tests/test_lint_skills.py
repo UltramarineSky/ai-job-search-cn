@@ -52,16 +52,23 @@ class LinterRepoFixture(unittest.TestCase):
             encoding="utf-8",
         )
 
-        command = self.root / ".claude" / "commands" / "job-setup.md"
-        command.parent.mkdir(parents=True)
-        command.write_text("# /job-setup - Test setup command\n", encoding="utf-8")
-
-        skill = self.root / ".claude" / "skills" / "example" / "SKILL.md"
-        skill.parent.mkdir(parents=True)
-        skill.write_text(
-            "---\nname: example\ndescription: Example skill\n---\n",
-            encoding="utf-8",
-        )
+        # 基础夹具**不再**造 `.claude/commands/job-setup.md`：命令 stub 已整体删除，
+        # 那一目录里再有文件就是 lint 要报的「残留 stub」（见 test_leftover_command_stub_fails）。
+        # 入口现在是两族各一份壳 —— 只放一族会被「两族壳集合一致」那条守卫判红。
+        #
+        # 目录名用的是**路由壳**那个名字（`job-application-assistant`，真实仓库里唯一
+        # 一份不生成、也没有工作流正文的壳），不是随手起的 `example`：新加的「两族都有
+        # 壳却没有正文」那条判据（test_shell_in_both_families_without_workflow_fails）
+        # 会把后者判红，而本文件大半测试都从 make_layout() 起。换句话说这份夹具今天
+        # 同时是那条判据的**反向对照** —— 路由壳不许被点着，点着了这里一起红。
+        for fam in (".claude", ".agents"):
+            skill = self.root / fam / "skills" / "job-application-assistant" / "SKILL.md"
+            skill.parent.mkdir(parents=True)
+            skill.write_text(
+                "---\nname: job-application-assistant\n"
+                "description: Consulting router shell\n---\n",
+                encoding="utf-8",
+            )
 
         self.settings = self.root / ".claude" / "settings.json"
         self.write_settings({"permissions": {"allow": []}})
@@ -121,19 +128,36 @@ class SettingsShapeTests(LinterRepoFixture):
 
 
 class WorkflowLayoutTests(LinterRepoFixture):
-    """workflows/ 布局检查：stub 指向、stub 长度、入口存在、中立性。"""
+    """workflows/ 布局检查：壳指向、两族各一份、残留 stub、中立性。"""
+
+    def make_entry(self, stem):
+        """给 `workflows/<stem>.md` 在**两族各**放一份壳。
+
+        生成器（`tools/gen_entries.py`）就是一次落两族，夹具只落一族的话，
+        「两族壳集合一致」那条守卫会先红，掩盖掉本条测试真正要验的那一项。
+        """
+        for fam in (".claude", ".agents"):
+            shell = self.root / fam / "skills" / stem / "SKILL.md"
+            shell.parent.mkdir(parents=True, exist_ok=True)
+            shell.write_text(
+                f"---\nname: {stem}\ndescription: 测试壳\n---\n\n"
+                f"读取并严格执行 `workflows/{stem}.md`。\n",
+                encoding="utf-8")
 
     def make_layout(self):
         wf = self.root / "workflows"
         wf.mkdir()
         (wf / "job-setup.md").write_text("# /job-setup - Test\n\n用网页抓取能力取回页面。\n",
                                      encoding="utf-8")
-        (self.root / ".claude" / "commands" / "job-setup.md").write_text(
-            "# /job-setup - Test setup command\n\n"
-            "读取并严格执行 `workflows/job-setup.md`。用户输入：$ARGUMENTS\n",
+        # 索引表正本在 workflows/INDEX.md（2026-09-29 从 AGENTS.md 搬来）；
+        # 表是这份文件的全部内容，正好压着 B2 收尾正则的 \Z 分支。
+        (wf / "INDEX.md").write_text(
+            "## 工作流索引\n\n| 任务 | 正文 |\n|---|---|\n| 测试 | `workflows/job-setup.md` |\n\n",
             encoding="utf-8")
+        self.make_entry("job-setup")
+        # AGENTS.md 只留节名锚 + 指针；表不再住这里。
         (self.root / "AGENTS.md").write_text(
-            "# AGENTS\n\n## 工作流索引\n\n| 任务 | 正文 |\n|---|---|\n| 测试 | `workflows/job-setup.md` |\n\n"
+            "# AGENTS\n\n## 工作流索引\n\n索引表搬到 `workflows/INDEX.md`。\n\n"
             "## 能力对照表\n\n| 能力 |\n|---|\n| 网页抓取 / web fetch |\n| 网络搜索 / network search |\n"
             "| 结构化提问 / structured prompt |\n| 并行子代理 / parallel sub-agents |\n",
             encoding="utf-8")
@@ -151,43 +175,148 @@ class WorkflowLayoutTests(LinterRepoFixture):
         result = run_linter(self.root)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_stub_missing_reference_fails(self):
-        self.make_layout()
-        (self.root / ".claude" / "commands" / "job-setup.md").write_text(
-            "# /job-setup - Test setup command\n\n自由发挥。\n", encoding="utf-8")
-        result = run_linter(self.root)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("workflows/job-setup.md", result.stdout)
+    def test_shell_without_workflow_reference_fails(self):
+        """壳在、正文里却不提它那份工作流 —— 入口指向空气。
 
-    def test_fat_stub_fails(self):
+        只坏 **一族**（`.agents`）：判据是分族核的，所以该只报 `.agents`，完好那族
+        不许被牵连。两族一起坏的话，这条就看不出循环其实只查了「任一族有就算过」——
+        那正是原来 stub/壳二选一写法的行为。
+        """
         self.make_layout()
-        fat = "# /job-setup - T\n\n读取并严格执行 `workflows/job-setup.md`。\n" + "填充行\n" * 5
-        (self.root / ".claude" / "commands" / "job-setup.md").write_text(fat, encoding="utf-8")
+        broken = self.root / ".agents" / "skills" / "job-setup" / "SKILL.md"
+        broken.write_text("---\nname: job-setup\ndescription: 测试壳\n---\n\n自由发挥。\n",
+                          encoding="utf-8")
         result = run_linter(self.root)
         self.assertEqual(result.returncode, 1)
-        self.assertIn("max 5", result.stdout)
+        self.assertIn(".agents/skills/job-setup/SKILL.md", result.stdout.replace("\\", "/"))
+        self.assertNotIn("no skill shell in .claude", result.stdout)
+
+    def test_leftover_command_stub_fails(self):
+        """残留 stub 探测器：`.claude/commands/` 里再冒出文件就是手写的第二落点。
+
+        取代原来那条 `test_fat_stub_fails`（「stub 不许超过 5 行」）。那条按 stub 的
+        **形状**判，而形状整个作废了：入口文件本身不该存在，它写成什么样都不用去看。
+        它防的东西（内容被抄进入口文件、和正文飘）由这条更硬地接管——一个文件都没有，
+        就没有抄件可飘。
+        """
+        self.make_layout()
+        stray = self.root / ".claude" / "commands" / "job-setup.md"
+        stray.parent.mkdir(parents=True)
+        stray.write_text("# /job-setup - Test setup command\n\n自由发挥。\n", encoding="utf-8")
+        result = run_linter(self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("command stubs are gone", result.stdout)
+        # 指引必须给出该去哪儿：索引与生成器，一条不落
+        self.assertIn("workflows/INDEX.md", result.stdout)
+        self.assertIn("tools/gen_entries.py", result.stdout)
+
+    def test_shell_only_in_one_family_fails(self):
+        """两族壳集合守卫：只在一族有的壳 = 生成器跑了一半。
+
+        取代原来那条 `test_stub_pointing_at_missing_workflow_fails`（ghost stub）。
+        同名的壳现在指向不存在的正文，这条从两族一致性方向抓到。
+        「壳名必须对应一份工作流正文」那半边有**两处**在查：lint 的反向判据
+        （下面 `test_shell_in_both_families_without_workflow_fails`）与
+        `tests/test_docs_accuracy.py::test_shell_name_matches_its_workflow`
+        （两族都查、不依赖 lint）—— 两族一起有的悬空壳，集合守卫看不见，
+        靠的就是这两条。
+        """
+        self.make_layout()
+        ghost = self.root / ".claude" / "skills" / "ghost" / "SKILL.md"
+        ghost.parent.mkdir(parents=True)
+        ghost.write_text("---\nname: ghost\ndescription: d\n---\n\n"
+                         "读取并严格执行 `workflows/ghost.md`。\n", encoding="utf-8")
+        result = run_linter(self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("families disagree", result.stdout)
+        self.assertIn("ghost", result.stdout)
+
+    def test_shell_in_both_families_without_workflow_fails(self):
+        """两族**各**有一份壳、没有 `workflows/<名>.md` = 入口把用户领进空房间。
+
+        这一向此前是 lint 的盲区，两个方向都遮住了它：`check_workflow_layout()` 的
+        循环从工作流这一侧走（没有正文就轮不到它），而 `main()` 里那条集合守卫比的
+        是两族**彼此**（两边同时多出来一份壳 = 相等 = 绿）。只剩
+        `tests/test_docs_accuracy.py` 一条兜着，于是单独跑 `python tools/lint_skills.py`
+        时（CI 的 lint job、 CONTRIBUTING 让它当第一道门）报的是 OK。
+
+        「它不该顺手过滤掉悬空壳」也一并钉住了：见 `command_shells()` 的那条 ⚠️。
+        """
+        self.make_layout()
+        for fam in (".claude", ".agents"):
+            shell = self.root / fam / "skills" / "ghost" / "SKILL.md"
+            shell.parent.mkdir(parents=True)
+            shell.write_text("---\nname: ghost\ndescription: d\n---\n\n"
+                             "读取并严格执行 `workflows/ghost.md`。\n", encoding="utf-8")
+        result = run_linter(self.root)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        out = result.stdout.replace("\\", "/")
+        # 两族**分别**报：只报一族看不出另一族是不是也带着同一份悬空壳
+        for fam in (".claude", ".agents"):
+            self.assertIn(f"{fam}/skills/ghost/SKILL.md: no workflows/ghost.md", out)
+        # 指引要给去处：索引 + 生成器，与残留 stub 那条同样一条不落
+        self.assertIn("workflows/INDEX.md", out)
+        self.assertIn("tools/gen_entries.py", out)
+        # 悬空壳在两族是同一批 —— 集合守卫这条不该顺手报它（那会把「一半没跑」
+        # 和「两边都悬空」两种病混成一条，而改法完全不同）
+        self.assertNotIn("families disagree", out)
+
+    def test_portal_skill_in_one_family_does_not_count_as_disagreement(self):
+        """反向对照：渠道技能**只装在 `.agents` 族**，它不该把上面那条守卫点着。
+
+        少了这条，判据会被「顺手」改成数两族全部 SKILL.md —— 那在本仓库的真实状态下
+        （`.agents/skills/liepin-search`）立刻红，而红的是没坏的那半边。
+        判据与 AGENTS.md 一致：有 `cli/src/cli.ts` 的是渠道，不是命令入口。
+        """
+        self.make_layout()
+        portal = self.root / ".agents" / "skills" / "zzportal-search"
+        (portal / "cli" / "src").mkdir(parents=True)
+        (portal / "cli" / "src" / "cli.ts").write_text("// 渠道入口\n", encoding="utf-8")
+        (portal / "SKILL.md").write_text("---\nname: zzportal-search\ndescription: d\n---\n",
+                                         encoding="utf-8")
+        result = run_linter(self.root)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_workflow_without_entry_fails(self):
         wf = self.make_layout()
         (wf / "orphan.md").write_text("# 孤儿工作流\n", encoding="utf-8")
         result = run_linter(self.root)
         self.assertEqual(result.returncode, 1)
-        self.assertIn("orphan", result.stdout)
+        # 两族**分别**报：只报一条「没有入口」看不出另一族是不是也没壳
+        self.assertIn("no skill shell in .claude/skills/orphan/", result.stdout.replace("\\", "/"))
+        self.assertIn("no skill shell in .agents/skills/orphan/", result.stdout.replace("\\", "/"))
 
-    def test_skill_shell_counts_as_entry(self):
+    def test_shell_missing_from_one_family_fails(self):
+        """少一族壳：生成器只跑了一半时，另一族照常、这一族的用户敲不到。
+
+        「任一族有就算过」的写法在这里会放行 —— 那正是要防的那种半坏状态。
+        """
         wf = self.make_layout()
         (wf / "job-scrape.md").write_text("# Job Scraper\n\n搜索职位。\n", encoding="utf-8")
-        shell = self.root / ".claude" / "skills" / "job-scrape" / "SKILL.md"
-        shell.parent.mkdir(parents=True)
-        shell.write_text("---\nname: scrape\ndescription: d\n---\n\n"
-                         "读取并严格执行 `workflows/job-scrape.md`。\n", encoding="utf-8")
-        # Add scrape to AGENTS.md index (inside the "## 工作流索引" section, not
+        self.make_entry("job-scrape")
+        (self.root / ".agents" / "skills" / "job-scrape" / "SKILL.md").unlink()
+        index = self.root / "workflows" / "INDEX.md"
+        index.write_text(index.read_text(encoding="utf-8")
+                         + "| 抓取 | `workflows/job-scrape.md` |\n",
+                         encoding="utf-8")
+        result = run_linter(self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no skill shell in .agents/skills/job-scrape/",
+                      result.stdout.replace("\\", "/"))
+        self.assertNotIn("no skill shell in .claude/skills/job-scrape/",
+                         result.stdout.replace("\\", "/"))
+
+    def test_skill_shell_counts_as_entry(self):
+        """壳（两族各一份）就是入口，不需要任何 stub。"""
+        wf = self.make_layout()
+        (wf / "job-scrape.md").write_text("# Job Scraper\n\n搜索职位。\n", encoding="utf-8")
+        self.make_entry("job-scrape")
+        # Add scrape to workflows/INDEX.md (inside its "## 工作流索引" section, not
         # just anywhere in the file) to satisfy bidirectional completeness
-        agents = self.root / "AGENTS.md"
-        agents.write_text(agents.read_text(encoding="utf-8")
-                          .replace("## 能力对照表",
-                                   "| 抓取 | `workflows/job-scrape.md` |\n\n## 能力对照表"),
-                          encoding="utf-8")
+        index = self.root / "workflows" / "INDEX.md"
+        index.write_text(index.read_text(encoding="utf-8")
+                         + "| 抓取 | `workflows/job-scrape.md` |\n",
+                         encoding="utf-8")
         result = run_linter(self.root)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -208,15 +337,6 @@ class WorkflowLayoutTests(LinterRepoFixture):
         self.assertEqual(result.returncode, 1)
         self.assertIn("AskUserQuestion", result.stdout)
 
-    def test_stub_pointing_at_missing_workflow_fails(self):
-        self.make_layout()
-        (self.root / ".claude" / "commands" / "ghost.md").write_text(
-            "# /ghost - Test\n\n读取并严格执行 `workflows/ghost.md`。用户输入：$ARGUMENTS\n",
-            encoding="utf-8")
-        result = run_linter(self.root)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("does not exist", result.stdout)
-
     def test_missing_agents_md_fails(self):
         self.make_layout()
         (self.root / "AGENTS.md").unlink()
@@ -227,38 +347,34 @@ class WorkflowLayoutTests(LinterRepoFixture):
     def test_workflow_missing_from_index_fails(self):
         wf = self.make_layout()
         (wf / "extra.md").write_text("# /extra - T\n", encoding="utf-8")
-        (self.root / ".claude" / "commands" / "extra.md").write_text(
-            "# /extra - T\n\n读取并严格执行 `workflows/extra.md`。用户输入：$ARGUMENTS\n",
-            encoding="utf-8")
+        self.make_entry("extra")
         result = run_linter(self.root)
         self.assertEqual(result.returncode, 1)
         self.assertIn("not in the index", result.stdout)
 
     def test_index_referencing_missing_workflow_fails(self):
         self.make_layout()
-        agents = self.root / "AGENTS.md"
-        agents.write_text(agents.read_text(encoding="utf-8")
-                          .replace("## 能力对照表",
-                                   "| 幽灵 | `workflows/ghost.md` |\n\n## 能力对照表"),
-                          encoding="utf-8")
+        index = self.root / "workflows" / "INDEX.md"
+        index.write_text(index.read_text(encoding="utf-8")
+                         + "| 幽灵 | `workflows/ghost.md` |\n",
+                         encoding="utf-8")
         result = run_linter(self.root)
         self.assertEqual(result.returncode, 1)
         self.assertIn("ghost", result.stdout)
 
     def test_index_reference_outside_section_does_not_count(self):
-        # A workflow name mentioned outside "## 工作流索引" (e.g. an aside in
-        # the role/capability sections) must NOT satisfy the index-completeness
-        # check - only the index section counts as "registered". orphan2 gets
-        # its own stub (a valid Claude entry point) so the only possible
-        # failure is the index-completeness check itself; the mention lives
-        # after "## 能力对照表", i.e. outside "## 工作流索引".
+        # A workflow name mentioned outside the index table must NOT satisfy the
+        # index-completeness check - only "## 工作流索引" inside workflows/INDEX.md
+        # counts as "registered". The index moved out of AGENTS.md (2026-09-29),
+        # so this now pins the sharper edge: AGENTS.md prose - the old host of
+        # the table - mentioning a workflow registers nothing. orphan2 gets its
+        # own two-family shells (a valid entry point) so the only possible
+        # failure is the index-completeness check itself.
         # Regression test for the pre-fix bug where the whole AGENTS.md file
         # was scanned for "workflows/<x>.md" mentions.
         wf = self.make_layout()
         (wf / "orphan2.md").write_text("# 孤儿工作流 2\n", encoding="utf-8")
-        (self.root / ".claude" / "commands" / "orphan2.md").write_text(
-            "# /orphan2 - Test\n\n读取并严格执行 `workflows/orphan2.md`。用户输入：$ARGUMENTS\n",
-            encoding="utf-8")
+        self.make_entry("orphan2")
         agents = self.root / "AGENTS.md"
         agents.write_text(agents.read_text(encoding="utf-8")
                           + "\n（角色段提及 `workflows/orphan2.md`，但这不在工作流索引节内）\n",
@@ -269,8 +385,8 @@ class WorkflowLayoutTests(LinterRepoFixture):
 
     def test_missing_workflow_index_section_fails(self):
         self.make_layout()
-        agents = self.root / "AGENTS.md"
-        agents.write_text(agents.read_text(encoding="utf-8")
+        index = self.root / "workflows" / "INDEX.md"
+        index.write_text(index.read_text(encoding="utf-8")
                           .replace("## 工作流索引\n\n", ""), encoding="utf-8")
         result = run_linter(self.root)
         self.assertEqual(result.returncode, 1)
@@ -318,10 +434,11 @@ class WorkflowLayoutTests(LinterRepoFixture):
 
     def test_cjk_error_message_survives_ascii_stdout(self):
         """错误信息内嵌中文（'## 工作流索引'）；在表示不了中文的控制台编码下必须降级
-        输出，而不是在打印循环里抛 UnicodeEncodeError 把其余发现一起吞掉。"""
+        输出，而不是在打印循环里抛 UnicodeEncodeError 把其余发现一起吞掉。
+        锚点在 workflows/INDEX.md，换文件不换判据。"""
         self.make_layout()
-        agents = self.root / "AGENTS.md"
-        agents.write_text(agents.read_text(encoding="utf-8")
+        index = self.root / "workflows" / "INDEX.md"
+        index.write_text(index.read_text(encoding="utf-8")
                           .replace("## 工作流索引\n\n", ""), encoding="utf-8")
         result = subprocess.run(
             [sys.executable, str(self.root / "tools" / "lint_skills.py")],
@@ -518,18 +635,25 @@ class WorkflowLayoutTests(LinterRepoFixture):
         result = run_linter(self.root)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_index_section_last_in_file_passes(self):
-        """索引恰好是最后一节时也要能匹配（收尾正则少了 \\Z 分支会误报 missing）。"""
-        self.make_layout()
-        # 同样的内容，能力对照表在前、工作流索引在后
-        (self.root / "AGENTS.md").write_text(
-            "# AGENTS\n\n## 能力对照表\n\n| 能力 |\n|---|\n| 网页抓取 / web fetch |\n"
-            "| 网络搜索 / network search |\n| 结构化提问 / structured prompt |\n"
-            "| 并行子代理 / parallel sub-agents |\n\n"
-            "## 工作流索引\n\n| 任务 | 正文 |\n|---|---|\n| 测试 | `workflows/job-setup.md` |\n",
-            encoding="utf-8")
+    def test_index_registration_survives_any_agents_section_order(self):
+        """索引表搬到 workflows/INDEX.md 后，AGENTS.md 里谁前谁后影响不到 B2；
+        钉住搬走后仍然成立的那半边：AGENTS.md 在「## 能力对照表」之后提到一个
+        **真实存在、有入口、却没进索引表**的 workflows/x.md → 只许报
+        「not in the index」，不许误报悬空指针（悬空扫描照旧看 AGENTS 全文，
+        文件在盘上就该放行）。原来那条「索引恰好是最后一节」的 \\Z 分支由
+        make_layout 的 INDEX.md 夹具常年代验——表就是那份文件的全部内容，
+        test_valid_layout_passes 一绿它就在。"""
+        wf = self.make_layout()
+        (wf / "extra.md").write_text("# /extra - T\n", encoding="utf-8")
+        self.make_entry("extra")
+        agents = self.root / "AGENTS.md"
+        agents.write_text(agents.read_text(encoding="utf-8")
+                          + "\n能力对照表之后提到 `workflows/extra.md`。\n",
+                          encoding="utf-8")
         result = run_linter(self.root)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("not in the index: workflows/extra.md", result.stdout)
+        self.assertNotIn("references missing workflows/extra.md", result.stdout)
 
     def test_dangling_reference_outside_index_fails(self):
         """段外的 workflows/*.md 指针（角色段、能力表降级列）也不能指向不存在的文件。

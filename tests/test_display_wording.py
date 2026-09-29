@@ -65,7 +65,7 @@ BANNED_WORDS = [
 #: 分界线是**这段字在到达用户之前过不过转换层**：写进文件再导出的可以用码，
 #: 直接打进聊天的不行。同日在 `job-rank.md` Step 5（直接打给用户的那份产出）
 #: 抓到一处「标了 FLAG」，改的是那一处，不是这张表。
-BANNED_CODES = ["COCKPIT", "SCRAPE", "DRAFT", "INTV", "CDP", "ATS"]
+BANNED_CODES = ["COCKPIT", "SCRAPE", "RANK", "DRAFT", "INTV", "CDP", "ATS"]
 
 # （原来这里有 SEEN 样例数据和 _visible_text 剥标签器——单页渲染器 bd.render
 # 删除时留下的残骸，定义后全文件零引用，已清。）

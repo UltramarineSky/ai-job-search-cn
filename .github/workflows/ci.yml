@@ -47,6 +47,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pyyaml
+      # 生成物漂了就红，且要**先于** lint_skills 跑：漂了的壳会让 lint 报一串
+      # 级联错误，把「哪个文件跟正本不一致」这条真正要看的信号埋掉。
+      - name: Generated entries are current
+        run: python tools/gen_entries.py --check
       - run: python tools/lint_skills.py
 
   security-guards:

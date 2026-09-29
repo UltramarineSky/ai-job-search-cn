@@ -182,7 +182,7 @@ class VerdictSteersAwayFromTheWrongAnswer(unittest.TestCase):
         v = gs.verdict(self._box(pick=20, learn=6, home=5, off=10))
         self.assertIn("先别急着开学习清单", v)
         # 原来验的是文件名 `search-queries` —— 而用户不知道该拿那个文件怎么办。
-        # 2026-08-23 改成命令（`AGENTS.md`「面板每处引导都要写出命令」）。
+        # 2026-08-23 改成命令（`AGENTS.md`「每一处引导都要写出该敲的命令」）。
         self.assertIn("/job-setup --section search", v, "没给出该敲哪条命令")
 
     def test_learn_heavy_proceeds(self):

@@ -4,7 +4,7 @@
 ## 两层清单，各有各的读者
 
     工作流自己的「可选参数」    执行者照它决定这次能给什么
-    `AGENTS.md` 的索引表        **面板上那份帮助的正文**（`parse_commands` 解析它，
+    `workflows/INDEX.md` 的索引表 **面板上那份帮助的正文**（`parse_commands` 解析它，
                                 `CommandBook` 渲染）——用户唯一看得见的一份
 
 一面旗子只写在正文散文里，两层都列不出来，就等于只有读到那一段的人才知道它存在。
@@ -32,7 +32,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-AGENTS = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+# 索引表的正本：2026-09-29 从 AGENTS.md 搬进 workflows/INDEX.md（AGENTS.md 只留指针）。
+INDEX = (ROOT / "workflows" / "INDEX.md").read_text(encoding="utf-8")
 
 #: 索引表一行 → 那一行「怎么敲（举例）」列里出现的旗子。
 _FLAG = re.compile(r"(?<![\w-])(--[a-z][a-z-]+)")
@@ -43,7 +44,7 @@ _ITEM = re.compile(r"^\s*[-*]\s*`(--[a-z][a-z-]+)", re.M)
 def _rows() -> dict:
     """`命令名 → 索引表那一行列出的旗子`。"""
     out = {}
-    for ln in AGENTS.splitlines():
+    for ln in INDEX.splitlines():
         if not (ln.startswith("|") and "workflows/" in ln):
             continue
         cells = [c.strip() for c in ln.strip("|").split("|")]

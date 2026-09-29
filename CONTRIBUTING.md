@@ -24,7 +24,7 @@
 哪些工具，正文一句「读取并严格执行 `workflows/<名>.md`」把活交出去。
 
 **壳归 Claude，正文归所有工具。** `.claude/` 底下不该有任何正文——别的 AI 工具按
-`AGENTS.md`「工作流索引」直接读 `workflows/<名>.md`，读到 `.claude/…` 路径就走不下去了。
+`workflows/INDEX.md` 直接读 `workflows/<名>.md`，读到 `.claude/…` 路径就走不下去了。
 所以工作流正文里**不许出现 `.claude/` 路径，也不许自称「本技能 / this skill」**
 （`tools/lint_skills.py` 扫这两类）。实测栽过：`job-scrape.md` 里那句「框架自己的
 `search-queries.md` **在本技能目录下**」，在正文搬出技能之后指向了一个不存在的位置。
@@ -43,20 +43,46 @@
   （`tests/test_bash_permissions_use_the_prefix_form.py`）。
 - **限定到入口，不开宽授权**：写具体那个脚本，别写 `Bash(python tools/:*)`。
   现成的例子是 portal CLI 那两条——都限定到 `cli.ts` 这一个入口。
-- **纯咨询壳不申请执行权限**：`job-application-assistant` 只给建议，真要投递时把人
-  交给 `/job-apply`（命令 stub 没有 `allowed-tools` 限制）。给它开 typst 权限既没必要，
-  也会让人以为这个壳自己会编译 PDF。
+  这一条以前**任何地方都没执行**（只有这一句话），2026-09-29 起由
+  `tools/security_guards.py` 执行：权限文件里的每一条都要能从生成器的清单推出来，
+  推不出来就红（`tests/test_the_generator_and_the_guard_agree.py` 带着变异对照，
+  喂它一条 `Bash(python tools/:*)` 确认会红）。
+- **纯咨询壳不申请执行权限**：`job-application-assistant` 只是众多壳里的一个，而每个
+  壳的权限都由**它自己那份工作流正文实际会跑的命令**派生。这份壳的正文只给建议，真要
+  投递时把人交给 `/job-apply`（那是另一个壳，typst 那几条写在它自己那份工作流的权限里）。
+  给咨询壳开 typst 权限既没必要，也会让人以为这个壳自己会编译 PDF。
 
 查「写全了没有」的是 `tests/test_skill_permissions_cover_its_workflow.py`（上面那条
 「顺手看一眼壳」）：从工作流的 ` ```bash ` 块里取命令，对着壳上的规则逐条查。
 它**只认代码块**——正文里「Claude Code 本身走 `npm install -g` 安装」是在说别人
 怎么装，不是让执行者跑 `npm`。三条写法约定里，第一条由
-`tests/test_bash_permissions_use_the_prefix_form.py` 管，后两条靠 review。
+`tests/test_bash_permissions_use_the_prefix_form.py` 管；第二条两侧都有人盯——
+权限文件那一侧是 `tools/security_guards.py`，壳那一侧是 `_entries._rule_for`
+的「映射不出规则就不派生」（宽形状它根本推不出来）。第三条仍靠 review。
 
 > 注意这与 `.claude/settings.json` 是两件事：那份清单是**预批**（免去每次询问），
-> 由 `tools/security_guards.py` 的 `ALLOWED_PERMISSIONS` 逐字钉死，**放宽必须显式
-> 可审**。壳上的 `allowed-tools` 决定的是「够不够得着」，不是「要不要问你」——
+> 由 `tools/security_guards.py` 按**生成器的清单**逐条查出处（`derivable_entries()`：
+> `gen_entries.SETTINGS_ALLOW` + 各生成壳的 Bash 规则 + `_entries.PORTAL_BASH`），
+> **放宽必须显式可审**——要加一条，先让 `tools/gen_entries.py` 推得出来它。
+> 原来这里是本文件手抄的四条，与生成器各写一遍同一个决定。
+> 壳上的 `allowed-tools` 决定的是「够不够得着」，不是「要不要问你」——
 > 给壳补一条权限不等于给它免了询问。
+
+## 工作流正文里「不点名工具」这条管到哪为止
+
+`AGENTS.md`「能力对照表」开头那句「正文只写能力名，不点名任何具体工具」，管的是
+**各家实现不一样的东西**——取数、搜索、结构化提问、并行子代理、Gmail、浏览器。
+这些换一个工具就换一个名字，写死了另一家就够不着。
+
+`Glob` / `Read` / `Edit` / `Write` 这类**每家都有的文件操作不算违规**，别为了
+合规把它们换成含糊说法：「用 Glob 匹配 `templates/**/TEMPLATE.md`」是一条能照着做的
+指令，改成「找出符合这个模式的文件」就把模式丢了。**判据是「换一个工具，这个名字还
+成立吗」**——不成立的才要改成能力名。
+
+2026-09-30 全量审计按这条分界放过了八处（`job-add-portal`、`job-add-template`、
+`job-apply`、`job-reset`、`job-setup` 里的 Glob/Read/Edit），没有改成。
+`job-notion-sync` 那处「Claude Code 下跑 `claude mcp add …`」同样放过：它紧跟着
+就有一条「其它 AI 工具按你所在工具的方式接」，两条一起才完整。
 
 ## 代码风格
 
@@ -90,9 +116,11 @@ python -m unittest discover -s tests -t .
 > `pip install pyyaml`），而 README 与 SETUP 都说「只用标准库」—— 
 > 新贡献者照着这一节敲，第一条就撞 `requires PyYAML`。
 
-- `lint_skills.py` 检查每个 `SKILL.md`/命令文件的结构（frontmatter、标题格式等），
-  以及 `workflows/`（正文权威来源）与 `.claude/commands/` stub 的双向一致性——stub
-  必须指向存在的 workflow 且限长 ≤5 行——和 workflows 正文的工具中立性（不得出现
+- `lint_skills.py` 检查每个 `SKILL.md` 的结构（frontmatter、标题格式等），两族
+  （`.claude/skills/` 与 `.agents/skills/`）壳集合一致且每条工作流都有自己那两份壳，
+  `.claude/commands/` 底下不再长出命令 stub（入口只有生成的技能壳这一种形态；手写的
+  第二落点直接报错，指向 `workflows/INDEX.md` 与 `tools/gen_entries.py`），
+  以及 workflows 正文的工具中立性（不得出现
   `WebFetch` 等工具字面量，工具对号统一放在 `AGENTS.md` 能力对照表）。
 - `security_guards.py` 检查 `.claude/settings.json` 权限允许列表、`.gitignore` 里
   个人数据保护规则有没有被意外放宽。
@@ -292,7 +320,7 @@ CI 那边只剩一个弱得多的代理判据（`placeholder-integrity`：模板
 | **断言撞上解释自己的文字** | 禁掉某个字符串的守卫，被**讲这条规则的注释**引到，于是在变异之前就红。2026-08-26 第七次出现（`tests/test_only_a_person_lifts_a_block.py` 禁「等一段时间再跑」，而禁令自己引用了它）。解法固定：扫之前先剥掉注释与 docstring （`re.sub(r'"""[\s\S]*?"""|#[^
 ]*', "", raw)`）—— 规则总得能解释自己 |
 
-这六种没有一种能靠再写一条守卫**彻底**杜绝（守卫守不了「守卫有意义」这件事），
+这些形状没有一种能靠再写一条守卫**彻底**杜绝（守卫守不了「守卫有意义」这件事），
 唯一可靠的检法就是变异验证——所以它是纪律，不是建议。变异还要**有效**：
 确认注入的错真的会落到你断言的那条路径上（实测有过变异根本不落盘、测试照绿，
 白验了一轮）。
@@ -307,7 +335,7 @@ CI 那边只剩一个弱得多的代理判据（`placeholder-integrity`：模板
 
 上一节讲守卫**怎么失效**，这一节讲怎么**先发现**哪里没被守住。
 
-2026-08-20/21 连着用了**八种**查法，产出差得很远，而差别与「代码看起来对不对」几乎无关，
+2026-08-20/21 连着用了**十种**查法，产出差得很远，而差别与「代码看起来对不对」几乎无关，
 只与「**这把尺子以前有没有量过**」有关：
 
 | 查法 | 产出 | 适合找什么 |

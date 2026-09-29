@@ -64,7 +64,8 @@ def n_waiting(seen: dict) -> int:
     2026-08-23，188 里 182 个 `status: new`（真在等着评），另外 6 个是
     **已下线且从没评过**的死岗 —— 印 188 就是把 6 个死岗说成积压。
 
-    为什么值得印：`AGENTS.md` 的承诺是「抓完直接排出可以投的，**不停在待评**」，
+    为什么值得印：`workflows/INDEX.md` 索引里 `/job-scrape` 的承诺是「抓完直接排出可以投的，
+    **不停在待评**」，
     所以一个长期存在的待评池本身就说明那条自动衔接断过一次。而同一时刻面板
     正在说库存见底（行业对口只剩 49、备好没发的 62）—— 182 个没评的岗里
     可能就有能投的，它们却在任何一处都不出现。
@@ -1615,9 +1616,10 @@ def next_step(env: dict, st: dict) -> list[str]:
         return [
             "你是第一次用。下一步：",
             "",
-            "    claude              # 在这个目录启动 Claude Code",
-            "    /job-setup          # 然后输入这条，它会问你一串问题",
+            "    /job-setup          # 在你的 AI 编码工具里输入这条，它会问你一串问题",
             "",
+            "先在这个目录下启动你的工具——工作流、命令入口、你的资料都在这个目录里，",
+            "从别的目录启动它看不到。用的是哪一家都一样。",
             "不必一次答完。先问目标城市和岗位关键词，答完这两项（约 3 分钟）就能去搜岗；",
             "薪资、学历、硬性条件在下一轮，要出投递材料时才问「你明确不做/不会什么」。",
             "最后这一项是后面所有材料诚实的前提，到时候值得如实答。",
@@ -1829,31 +1831,74 @@ def detect_code_tool() -> str:
         return "antigravity"
     if os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_ENTRYPOINT"):
         return "claude"
-    if os.environ.get("GEMINI_CLI"):
-        return "gemini"
+    if os.environ.get("QODERCN_CLI") or os.environ.get("QODER_AGENT_SDK_ENTRYPOINT"):
+        return "qoder"
+    if os.environ.get("QWEN_CODE"):
+        return "qwen"
+    if os.environ.get("MIMOCODE"):
+        return "mimo"
     return "generic"
 
 
-#: JOBS_CODE_TOOL 手工指定为这些名字时，脚注能叫出工具名（自动探测分不出它们）。
+#: 自检末尾那一行要叫得出工具名（每家都印，见 `main` 那段）。
+#: （cursor / codex 自动探测分不出来，只能手工指定；qoder 两边都在。）
 _TOOL_LABELS = {
     "antigravity": "Antigravity（agy）",
+    "claude": "Claude Code",
     "cursor": "Cursor",
-    "gemini": "Gemini CLI",
     "codex": "Codex CLI",
+    "mimo": "MiMo Code",
+    "qoder": "Qoder",
+    "qwen": "Qwen Code",
 }
 
 #: 给用户敲的斜杠命令。前面贴着单词 / 点 / 斜杠 / 连字符的不动——
 #: 那是路径（workflows/job-apply.md）或 URL 里的片段，不是命令。
 _SLASH_CMD = re.compile(r"(?<![\w./-])/(job-[a-z][a-z-]*)")
 
+#: 每家工具的命令语法。2026-09-29 / 09-30 逐家实测：**五家吃斜杠，一家拦**。
+#: Claude Code 的技能进它的斜杠表；Qoder 的 harness 自己写着技能可按 `/<名>` 请求；
+#: agy 的 `/` 面板用户当场测过（`/job-scrape` 能匹配）；Qwen Code 0.24.7 起把技能
+#: 注册成 `/<技能名>`；MiMo Code 的技能以 `source: "skill"` 进它的命令表。
+#: **只有 Codex 把 `/` 留给自己的内置指令** —— 它的二进制里印着
+#: `Unrecognized command '/-'. Type "/" for a list of supported commands.`。
+#: 这一格原来只把 `claude` 放进 `"slash"`、其余全去斜杠，理由写的正是「斜杠会被
+#: 客户端当成内置指令拦掉」——那句话对五家是错的，白扣了斜杠这一层形式。
+#: Gemini CLI 原来也在 `"slash"` 里，2026-09-30 整档删掉（那家已停，后继是 agy）。
+#: Codex 没有可用的探测信号（`CODEX` 这个变量不存在），自动探测落 `"generic"`，
+#: 所以 `"no-slash"` 那一档兜的是**没实测过的工具**（含 Codex、Cursor、OpenCode）。
+#: `detect_code_tool` 自动探测能返回的每一个值都要在这里有一格，见
+#: `tests/test_slash_survives_where_the_palette_is_the_skill_list.py`
+#: （它把那张表的键与探测函数源码里的 `return` 字面量逐条对拍 —— 值是从源码数的，
+#: 不是比另一份手抄名单，加一档忘了给格子就会红；同一个文件还钉着面板那份抄件）。
+COMMAND_SYNTAX = {
+    "claude": "slash",
+    "antigravity": "slash",
+    "mimo": "slash",
+    "qoder": "slash",
+    "qwen": "slash",
+    "generic": "no-slash",
+}
+
+
+def command_syntax(tool: str) -> str:
+    """这一档给不给斜杠。**没实测出来的工具按 `"no-slash"` 处理**：裸形式各家都
+    敲得动（触发词接得住），留着一个敲不动的斜杠则每一条引导都作废。实测吃斜杠的
+    五家各自有格，所以默认值只兜「没测过的」那一类，不再顺手把几家扣进去。
+    """
+    return COMMAND_SYNTAX.get(tool, COMMAND_SYNTAX["generic"])
+
 
 def adapt_commands(text, tool: str) -> str:
-    """非 Claude Code 环境下，把文本里的 `/job-xxx` 改成 `job-xxx`。
+    """把文档正本的斜杠命令改写成当前工具能敲的形式。
 
-    Claude Code 保留斜杠（Tab 补全）；其它助手不带斜杠直接发，斜杠会被
-    客户端当内置指令拦掉。文档正本保留斜杠，这里只改「印给用户看」的这一层。
+    **文档正本（`AGENTS.md`、`workflows/`、`workflows/INDEX.md`）里一律保留斜杠**
+    ——那是标准形式；改写只发生在给用户看的最终渲染层。实测吃斜杠的五家
+    （Claude Code / agy / MiMo / Qoder / Qwen）原样返回，认不出来的才去斜杠。
     """
-    if tool == "claude" or not isinstance(text, str):
+    if not isinstance(text, str):
+        return text
+    if command_syntax(tool) == "slash":
         return text
     return _SLASH_CMD.sub(r"\1", text)
 
@@ -1900,15 +1945,15 @@ def main(argv=None) -> int:
     # 都可能出现命令，包裹必须覆盖全程。
     tool = detect_code_tool()
     raw_stdout = sys.stdout
-    if tool != "claude":
+    if command_syntax(tool) != "slash":
         sys.stdout = _CommandStream(raw_stdout, tool)
     try:
-        return _main_body(args, tool, raw_stdout)
+        return _main_body(args, tool)
     finally:
         sys.stdout = raw_stdout
 
 
-def _main_body(args, tool: str, raw_stdout) -> int:
+def _main_body(args, tool: str) -> int:
     print()
     print("=" * 66)
     print("  AI 求职助手 —— 环境与进度自检")
@@ -1925,21 +1970,27 @@ def _main_body(args, tool: str, raw_stdout) -> int:
     for line in next_step(env, st):
         print(line)
 
-    # 斜杠在非 Claude Code 客户端会被当内置指令拦掉，上面的命令已经按工具
-    # 去斜杠了，这里只说一句「直接粘」，不让用户自己做字符串翻译。
-    if tool != "claude":
-        print()
-        label = _TOOL_LABELS.get(tool)
-        if label:
-            print(f"💡 已识别为 {label}：上面的命令都省掉了开头的斜杠，"
-                  "直接粘进助手对话框即可；也可以直接说大白话，比如「自动跑一轮」。")
-        else:
-            # generic 脚注要示范 Claude Code 的带斜杠写法，不能再走剥离流，
-            # 否则示例里的 /job-auto 会被自己剥掉。
-            raw_stdout.write(
-                "💡 这些命令在 AI 助手的对话框里输入：用 Claude Code 时带斜杠"
-                "（如 /job-auto，还能补全）；其它助手直接粘上面不带斜杠的写法，"
-                "或直接说大白话（如「自动跑一轮」）。\n")
+    # 「这批命令是按哪家工具的形式给的」这一行，每家都印。
+    # 原来只有去斜杠那几家印 —— 于是探测错了的人在输出里
+    # 找不到任何线索，而 `JOBS_CODE_TOOL` 那条手工纠正正是给他准备的。
+    # 措辞上只说他看到的这一种，**不并列另一种形式让他挑**：那等于把
+    # 「你的工具是哪一家」这道判断退回给用户。
+    print()
+    label = _TOOL_LABELS.get(tool)
+    if command_syntax(tool) == "slash":
+        print(f"💡 已识别为 {label}：上面的命令带开头的斜杠（如 /job-auto），"
+              "直接粘进对话框即可。")
+    elif label:
+        print(f"💡 已识别为 {label}：上面的命令不带开头的斜杠，"
+              "直接粘进对话框即可；也可以直接把要办的事说出来，比如「自动跑一轮」。")
+    else:
+        print("💡 没认出你在用哪家助手：上面给的是不带开头斜杠的写法，哪家都敲得动；"
+              "也可以直接把要办的事说出来，比如「自动跑一轮」。")
+    # 这串可选值**从 `COMMAND_SYNTAX` 派生**，不是手抄的字面量 —— 手抄那版
+    # 在删掉 gemini、加上 qwen/mimo 之后不会有任何测试变红，印出的纠正办法
+    # 就会指向一个已经删掉的档。
+    print("   认错了手工指定：JOBS_CODE_TOOL="
+          + "|".join(COMMAND_SYNTAX))
 
     print()
     print("完整说明：README.md（快速开始） · 安装细节：SETUP.md · 全部命令：AGENTS.md")

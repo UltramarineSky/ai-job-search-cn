@@ -297,13 +297,27 @@ class TheTitleAgreesWithTheIndexRow(unittest.TestCase):
     - `/job-auto` 标题写「评分 → 出材料」，索引与 README 都写「抓岗 → 评分 →
       出材料」。少掉的那一段在正文里是**一整节补货** + `--no-scrape` /
       `--no-browser` 两面旗子 —— 恰恰是用户最想先知道「它会不会动我账号」的
-      那一段。stub（`.claude/commands/job-auto.md`）逐字抄的标题，一起错。
+      那一段。当时的命令 stub 逐字抄了同一个标题，于是一起错（那层抄件已随
+      `.claude/commands/` 一起删掉，见下面退休说明）。
     - `/job-upskill` 标题写「按你**投**的岗算」，而正文明写那一档
       **不设成默认**（新用户投递记录是空的，拿它当默认这条命令对新人直接失效）。
       裸命令用的是所有**评过分**的岗，差着一个数量级的语料。
 
     第二处 2026-08-21 就发现过，当时只改了索引表的第一、四列 —— 同一句话的
     第三份抄件漏了。**「找到一个先问它有几个兄弟」，H1 就是那个没人问起的兄弟。**
+
+    ## 那第三份抄件现在在哪儿
+
+    它当时是命令 stub 的第一行，逐字抄工作流的 H1。19 份 stub 已整体删除（入口改成
+    `tools/gen_entries.py` 从索引派生的两族技能壳），**手抄的那一层没有了，这个漂移
+    方向也就不存在对象** —— 原先钉它的那条测试自己带了「扫不到 15 份就报红」的探针，
+    删完 stub 当天就如实报了红。它管的三件事分别落到：
+    工作流 H1 ↔ 索引第一列（本文件
+    `test_an_arrow_chain_in_the_title_matches_the_index`）、
+    壳里每一个字 ↔ 索引（`tests/test_generated_entries_are_current.py`）、
+    壳名 ↔ 工作流文件名（`tests/test_docs_accuracy.py` 的
+    `test_shell_name_matches_its_workflow`）。三头都是派生或机械比对，不再有需要人
+    记着的第二处。
     """
 
     def setUp(self):
@@ -341,27 +355,6 @@ class TheTitleAgreesWithTheIndexRow(unittest.TestCase):
         self.assertIsNone(self._stages("审一遍你的主简历，只报问题"))
         self.assertNotEqual(self._stages("评分 → 出材料"),
                             self._stages("抓岗 → 评分 → 出材料"))
-
-    def test_the_command_shell_repeats_the_title_verbatim(self):
-        """命令壳的第一行是工作流标题的**逐字抄件**，改一处就要改两处。
-
-        2026-08-27 修 `/job-auto` 标题时亲历：改完正文，壳还留着旧的那句。
-        它此刻是对的，只是靠人记着——而「靠人记着」在这个仓库里等于迟早分叉。
-        壳的路径由 `lint_skills.py` 那边管，这里只比第一行。
-        """
-        shells = sorted((ROOT / ".claude" / "commands").glob("*.md"))
-        self.assertGreaterEqual(len(shells), 15, "命令壳像是没找到")
-        bad = []
-        for s in shells:
-            wf = ROOT / "workflows" / s.name
-            if not wf.is_file():
-                bad.append(f"{s.name}：没有对应的工作流")
-                continue
-            a = s.read_text(encoding="utf-8").splitlines()[0].strip()
-            b = wf.read_text(encoding="utf-8").splitlines()[0].strip()
-            if a != b:
-                bad.append(f"{s.name}：壳「{a}」/ 正文「{b}」")
-        self.assertEqual(bad, [], "命令壳与工作流的标题对不上：\n  " + "\n  ".join(bad))
 
     def test_upskill_title_names_the_default_corpus(self):
         """标题不许把 `--applied` 那一档说成默认。

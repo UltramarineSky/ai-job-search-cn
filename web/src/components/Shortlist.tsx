@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Cmd } from "./Cmd";
+import { useCodeTool } from "../context/CodeToolContext";
 import { Input, Select, Table, Tooltip } from "antd";
 import { JobReadoutBody } from "./JobReadout";
 
@@ -137,6 +138,9 @@ export function Shortlist({
   // 已投视图的排序在**数据源**上做，不靠列的 defaultSortOrder：
   // 投递日期不是一列（它挤在职位那格的角标里），没有列就挂不上 sorter。
   const narrow = useNarrow();
+  // 悬浮提示里的命令也得走适配层：tooltip 是用户读到的字，免斜杠那一档
+  // 在这里拿到 `/job-apply` 就是照着敲不动的那一种。
+  const { formatCommand } = useCodeTool();
 
   // ---- 搜索与筛选 ----
   //
@@ -464,7 +468,7 @@ export function Shortlist({
                       <span className="ask-chip">话术备好 · 先问清</span>
                     </Tooltip>
                   ) : (
-                    <Tooltip title="开场白已经写好了，但这一档的意思是「先问清楚再决定投不投」。这个岗的评估里没留下要问什么（那一节是后来才要求的，早先的深评没写）——想让它补一份，重跑 /job-apply 加这个岗的链接。">
+                    <Tooltip title={`开场白已经写好了，但这一档的意思是「先问清楚再决定投不投」。这个岗的评估里没留下要问什么（那一节是后来才要求的，早先出的那份没写）——想让它补一份，重跑 ${formatCommand("/job-apply")} 加这个岗的链接。`}>
                       <span className="ask-chip" data-thin>话术备好 · 这档得先问</span>
                     </Tooltip>
                   )
@@ -502,7 +506,7 @@ export function Shortlist({
                   直接显示，不在这里另起一套说法 —— 判据在
                   `tools/stale_materials.py`，那是唯一住址。 */}
               {job.restale && (
-                <Tooltip title={`这个岗的判断现在不该再信：${job.restale}。重跑它会把职位描述读回来、重新判一遍，材料也跟着重出。一次一个跑 /job-apply 加这个岗的链接；这一批一起跑是 /job-apply --stale。`}>
+                <Tooltip title={`这个岗的判断现在不该再信：${job.restale}。重跑它会把职位描述读回来、重新判一遍，材料也跟着重出。一次一个跑 ${formatCommand("/job-apply")} 加这个岗的链接；这一批一起跑是 ${formatCommand("/job-apply")} --stale。`}>
                   <span className="ask-chip" data-thin>该重跑 · {job.restale}</span>
                 </Tooltip>
               )}
@@ -616,7 +620,8 @@ export function Shortlist({
       {constNote && <p className="sl-const">这 {jobs.length} 个{constNote}</p>}
       {/* ── 猎头压满这一档时，说出具名直招的那批在哪 ──
           猎头代招不等于差岗，但它决定了**能不能找到人**：简历先进猎头的库，
-          你没有第二条路。而国内回复率最高的动作是内推，内推只对具名公司成立。
+          你没有第二条路。而内推是具名公司那批唯一不靠海投的一条路（回复率没量过，
+          别当成测出来的排序），内推只对具名公司成立。
           投后统计那一栏已经在劝他「与其再投一个，不如找个能说上话的人」——
           可这一档里一个具名公司都没有，那句话就落不了地。
           两条建议必须在同一屏上接得上，否则用户按哪条都对不上另一条。 */}

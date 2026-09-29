@@ -86,17 +86,52 @@ class TheShellStaysNarrow(unittest.TestCase):
 
 
 class ItHandsOverTheCommand(unittest.TestCase):
+    """交出去的那条命令，**在哪一家工具里都得敲得动**。
+
+    2026-09-29 终审抓到：这一句原来写死 `让用户敲 /job-apply <职位链接>`。命令 stub
+    删除、两族壳逐字相同（Task 5）之后，这份手写壳也原样进了 `.agents/skills/`，
+    于是同一句话被 Qoder / Codex / agy / Qwen / MiMo 读到 —— 而**至少 Codex 一家会把
+    开头的斜杠当成自己的内置指令**（它二进制里印着 `Unrecognized command`）。
+    `doctor.COMMAND_SYNTAX` 那层渲染救不了它：这份壳不经过生成器，正文里的字面量
+    就是最终形态。所以要求是两条：命令要指名，**斜杠给不给要交给读到它的工具判断**
+    （`AGENTS.md`「命令形式按当前工具给，只给一种」）。
+
+    **这一条用例钉的是结构，不是逐家的实测结果**：命令点名、两种形态都在正文里出现、
+    并且说清为什么要分。哪天实测又翻了一档（吃斜杠与拦斜杠的比例变了），翻的是那张表
+    与正文里那句话，这里三条断言照样成立。
+    """
+
     def test_it_names_the_command(self):
         b = body()
-        self.assertRegex(b, r"\*\*让用户敲 `/job-apply <职位链接>`\*\*")
+        self.assertRegex(b, "让用户敲\\s*`/job-apply <职位链接>`")
+
+    def test_it_defers_the_leading_slash_to_the_running_tool(self):
+        """斜杠形式在文首，裸形式作为拦斜杠那一档给出，且说清为什么要分两种。"""
+        b = body()
+        self.assertIn("`job-apply <职位链接>`", b,
+                      "没给拦斜杠那一档的裸形式 —— Codex 里开头的斜杠敲不动")
+        self.assertRegex(b, r"由你此刻所在的工具定")
+        self.assertRegex(b, r"内置指令", "不写这一句，读的人不知道为什么要分两种形态")
+        self.assertRegex(b, r"不经过渲染层",
+                         "要点明这份壳为什么得自己判断：它是手写的，不过生成器")
 
     def test_it_names_the_tailoring_one_too(self):
-        """定制简历是另一条命令 —— 只给 `/job-apply` 会把人卡在那儿。"""
-        self.assertIn("/job-cv <职位链接>", body())
+        """定制简历是另一条命令 —— 只给 `job-apply` 会把人卡在那儿。"""
+        self.assertIn("job-cv <职位链接>", body())
+        # 这里原来还有一条 `assertNotIn("**让用户敲 `/job-apply")`，防的是
+        # 「写回成 Claude 专用的斜杠形式」。2026-09-29 逐家实测后方向反了：
+        # 四家吃斜杠，斜杠才是该放在文首的形式。「裸形式也得在正文里出现」
+        # 这一半由上面的 test_it_defers_the_leading_slash_to_the_running_tool 钉。
 
-    def test_it_says_the_stubs_are_unrestricted(self):
-        """不说这句，读的人会以为敲了命令一样受限、于是还是不敢交出去。"""
-        self.assertRegex(body(), r"不受本壳的权限限制")
+    def test_it_says_the_command_is_not_this_shell_to_run(self):
+        """不说这句，读的人会以为敲了命令一样受限、于是还是不敢交出去。
+
+        正本原来靠「那两条命令的 stub 没有 frontmatter，不受本壳的权限限制」
+        交代这层意思；命令 stub 整体删除后（Task 8），这句改成「那是另外两个
+        壳，权限由它们各自的工作流正文派生，与本壳无关」——**要求没变**：壳必须
+        说清交接出去那条命令的权限不归本壳管，读的人才敢交。锚点跟着换活着的措辞。
+        """
+        self.assertRegex(body(), r"权限由它们各自的工作流正文派生，与本壳无关")
 
     def test_it_says_the_narrowness_is_deliberate(self):
         b = body()

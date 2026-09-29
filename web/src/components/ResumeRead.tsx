@@ -1,5 +1,6 @@
 import { Tooltip } from "antd";
 import { Cmd } from "./Cmd";
+import { useCodeTool } from "../context/CodeToolContext";
 import type { ResumeInsight } from "../types";
 
 /**
@@ -35,6 +36,7 @@ function askNote(a: ResumeInsight["sweetSpot"]["asks"][number]) {
 
 export function ResumeRead({ data }: { data: ResumeInsight }) {
   const { sweetSpot: ss, blockers } = data;
+  const { formatCommand } = useCodeTool();
   // **两类分开。** 「简历里没有」只说明忘了写；「资料里也没有」说明他真没这一项。
   // 原来合成一类，引导句直接断言「你资料里写过……是你会但没写上去」——
   // 而那个前提**从没被验证过**（`inResume` 只查简历）。对一个资料里也没有的词，
@@ -93,7 +95,7 @@ export function ResumeRead({ data }: { data: ResumeInsight }) {
             <b className="lg-up">{ss.open}</b>
             {`——其余的你投过了、点掉了或者已下线。挑着投很快会见底，`}
             {"要补这一类的货，改搜索词比多抓一轮管用："}
-            <code>/job-setup --section search</code>
+            <Cmd>/job-setup --section search</Cmd>
           </p>
         )}
       </div>
@@ -120,7 +122,7 @@ export function ResumeRead({ data }: { data: ResumeInsight }) {
         <div className="kicker">
           简历要补什么
           {/* 边界必须说出来：字面比对看不到「你的说法 ≠ 市场的说法」那类 */}
-          <Tooltip title="词来自你自己资料里的「技能」一节，拿去在行业对口的岗的 JD 正文里数，再和简历比对。所以它只回答「你写过的这些能力，市场提了几次、简历写没写」。它看不到两类：一是你的说法和 JD 的说法不一样（你写「AI 编码工具」、JD 写「Cursor」）；二是市场反复要而你根本没接触过的。那两类要跑 /job-upskill，它有模型能做语义比对。">
+          <Tooltip title={`词来自你自己资料里的「技能」一节，拿去在行业对口的岗的 JD 正文里数，再和简历比对。所以它只回答「你写过的这些能力，市场提了几次、简历写没写」。它看不到两类：一是你的说法和 JD 的说法不一样（你写「AI 编码工具」、对方写「大模型应用工程师」）；二是市场反复要而你根本没接触过的。那两类要跑 ${formatCommand("/job-upskill")}，它有模型能做语义比对。`}>
             <span className="rread-q">怎么算的</span>
           </Tooltip>
         </div>

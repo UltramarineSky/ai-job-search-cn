@@ -60,7 +60,7 @@ export const envItems: EnvItem[] = [
     // 浏览器能力由 AI 工具提供，不是这个仓库的依赖 —— ok:null 表示不作判定
     name: "浏览器取数（由 AI 工具提供）",
     ok: null,
-    detail: "Claude Code 装了浏览器扩展即可用",
+    detail: "由你的 AI 工具提供：Claude Code 用它的浏览器扩展，没有扩展的走备用抓取方式",
     unlocks: "登录后抓 BOSS 直聘、智联招聘、前程无忧",
   },
 ];

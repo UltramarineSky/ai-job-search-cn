@@ -22,7 +22,7 @@
 实测两张单子 12 个 vs 8 个词，**只有 `AI工具` 重合**。
 
 顺带一条既有规矩：第二句原来只给了文件名 `profile/search-queries.md`。
-`AGENTS.md`「面板每处引导都要写出命令」—— 用户不知道拿那个文件怎么办。
+`AGENTS.md`「每一处引导都要写出该敲的命令」—— 用户不知道拿那个文件怎么办。
 """
 import sys
 import unittest
@@ -121,7 +121,7 @@ class BothVerdictsCarryThem(unittest.TestCase):
         self.assertIn("行业对不上最多的几个词", v)
 
     def test_both_give_a_command_not_a_file_path(self):
-        """`AGENTS.md`「面板每处引导都要写出命令」—— 原来第二句只给了文件名。"""
+        """`AGENTS.md`「每一处引导都要写出该敲的命令」—— 原来第二句只给了文件名。"""
         for v in (G.verdict(_box(off=[("甲词", 40)], home=[("乙词", 5)])),
                   G.verdict(_box(pick=[("甲词", 20)], learn=[("乙词", 6)]))):
             with self.subTest(v=v[:20]):

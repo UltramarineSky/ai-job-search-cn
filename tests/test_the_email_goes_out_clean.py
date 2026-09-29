@@ -120,8 +120,17 @@ class TheRuleItEnforcesIsStillWritten(unittest.TestCase):
 
         **判据要贴到那句话上。** 第一版在整份 AGENTS.md 里找日期，
         而这份文档里日期到处都是 —— 把 1035 旁边那个删掉，测试照样绿。
+
+        2026-09-29 闸门瘦身把这段实测搬进了 `docs/why/wording.md`（规则句留在
+        `AGENTS.md`）。所以这里**跟着指针去找那句话**，不再假设它还住在原处：
+        搬家可以，把日期搬丢、或把指针搬丢，都当场红。
         """
-        text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("docs/why/wording.md", agents,
+                      "AGENTS.md 不再指向这段实测，搬走就等于删掉")
+        text = (ROOT / "docs" / "why" / "wording.md").read_text(encoding="utf-8")
+        self.assertIn("1035", text,
+                      "那句 1035 条的实测不在落点里了 —— 是被删了还是又搬去别处？")
         i = text.index("1035")
         # **只看它前面。** 后面 25 字处就有另一个日期（2026-08-27，
         # 属于「只剩 1 条」那一句）—— 取双侧窗口时，把 1035 自己的日期
