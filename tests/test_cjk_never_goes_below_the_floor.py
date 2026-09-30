@@ -43,21 +43,53 @@ FLOOR = 12.0
 CJK = re.compile(r"[一-鿿]")
 #: `.foo, .bar em { … font-size: 11px … }`
 RULE = re.compile(r"([^{}]+)\{([^{}]*)\}", re.S)
-SIZE = re.compile(r"font-size:\s*([\d.]+)px")
+#: 字面量 `font-size: 12.5px`，或指向令牌的 `font-size: var(--fs-meta)`
+SIZE = re.compile(r"font-size:\s*(?:([\d.]+)px|var\((--[a-z0-9-]+)\))")
+#: `:root` 里的 `--fs-meta: 12.5px;`
+DEF = re.compile(r"(--[a-z0-9-]+)\s*:\s*([\d.]+)px")
+
+
+def size_tokens(css: str) -> dict:
+    """`{变量名: px}`——只认 `--x: 12px` 这种定义，注释里的例子已由上游剥掉。"""
+    return {m.group(1): float(m.group(2)) for m in DEF.finditer(css)}
 
 
 def small_classes() -> dict:
-    """`{类名: 字号}`，只收小于下限的。"""
+    """`{类名: 字号}`，只收小于下限的。
+
+    字号现在多数写成 `var(--fs-*)`（标度正本见 `web/DESIGN.md`），
+    所以**必须先把 var() 解成 px**。不解析的话这里一条都抽不到，
+    而这条测试会对着空气全绿——那比没有还坏，控制用例盯着。
+
+    解不出来的 `var(--x)` **记进 `UNRESOLVED` 单独报**，不许静默跳过：
+    跳过的下场是「这个类到底几磅没人知道，判据当它合格」。
+    """
     css = CSS.read_text(encoding="utf-8")
     css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)      # 注释里的例子不算
+    toks = size_tokens(css)
     out = {}
+    UNRESOLVED.clear()
     for sel, body in RULE.findall(css):
         m = SIZE.search(body)
-        if not m or float(m.group(1)) >= FLOOR:
+        if not m:
+            continue
+        if m.group(1) is not None:
+            px = float(m.group(1))
+        else:
+            px = toks.get(m.group(2))
+            if px is None:
+                for cls in re.findall(r"\.([a-zA-Z][\w-]*)", sel):
+                    UNRESOLVED.append(f"{cls} → var({m.group(2)})")
+                continue
+        if px >= FLOOR:
             continue
         for cls in re.findall(r"\.([a-zA-Z][\w-]*)", sel):
-            out[cls] = min(float(m.group(1)), out.get(cls, 99))
+            out[cls] = min(px, out.get(cls, 99))
     return out
+
+
+#: 引了 `var(--x)` 但 `:root` 里没有 `--x: Npx` 的规则（判据会红，见控制用例）
+UNRESOLVED: list = []
 
 
 def classes_that_show_chinese() -> dict:
@@ -88,8 +120,22 @@ def classes_that_show_chinese() -> dict:
 class ChineseStaysReadable(unittest.TestCase):
 
     def test_there_is_something_to_check(self):
-        """自检：两边都抽得出东西，否则下面那条对着空气跑。"""
+        """自检：两边都抽得出东西，否则下面那条对着空气跑。
+
+        加第二条是因为字号现在多数写成 `var(--fs-*)`：解析要哪一步坏了，
+        `small_classes()` 会安静地少抽甚至抽空，而「没抽到」在这条判据里等于通过。
+        所以这里直接验解析本身有料——令牌抽得出、引用扫得到、低于地板的也还抽得到。
+        """
         self.assertGreater(len(small_classes()), 3, "CSS 里一条小字号都没抽到")
+        self.assertEqual(UNRESOLVED, [],
+                         "这些规则引了 var(--x) 而 :root 没有对应定义，"
+                         "本判据看不见它们的字号，等于放行：" + " ; ".join(UNRESOLVED[:8]))
+        css = re.sub(r"/\*.*?\*/", "", CSS.read_text(encoding="utf-8"), flags=re.S)
+        toks = size_tokens(css)
+        self.assertGreaterEqual(len(toks), 6,
+                                ":root 里的 --fs-* 标度抽不到——解析器对接的格式失效了")
+        self.assertIn("font-size: var(--fs-", css,
+                      "字号全写成字面量了：那 var() 解析那一半没人走过，等于摆设")
         self.assertGreater(len(classes_that_show_chinese()), 20, "模板里一个带中文的类都没抽到")
 
     def test_no_chinese_is_set_below_the_floor(self):

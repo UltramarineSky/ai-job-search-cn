@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "web" / "src"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from jsx import attr_expr, jsx_open_tags  # noqa: E402
+from jsx import attr_expr, element_color, jsx_open_tags  # noqa: E402
 
 # 只在静态快照模式下成立的说法。出现在哪个组件里，那个组件就必须自己判断模式。
 #: 「干活都在命令行」也在此列：有本地服务时「我投了/不投」点页面就落盘，
@@ -862,22 +862,32 @@ class ReassuranceIsNotStyledAsWarning(unittest.TestCase):
     """
 
     def test_the_not_scored_chip_is_neutral(self):
-        """锚到**包着这句话的那个元素**，不是固定字符数的回看窗口。
+        """锚到**这句话实际拿到的颜色**，不管那个颜色写在哪。
 
         第一版用 460 字符回看，而我在 `className` 和 `style` 之间插的那段注释
         正好把 `color:` 挤出了窗口——变异把颜色改回警示色，测试照样绿。
         窗口大小是个会被无关编辑改变的量，别拿它当锚。
+
+        第二版锚的是 `style=`，那是**绑在实现形状上**：2026-09-30 把这条静态样式
+        从 inline style 收进 `.kicker.is-tag` 之后，它找不到锚、报的是「定位到的
+        不是带样式的那个元素」——而颜色其实还是中性的那一档。判据要问的是
+        「这句话是什么颜色」，不是「颜色写在哪」。所以现在两处都认：
+        有内联就取内联，没有就按 class 去 cockpit.css 里找最后盖上的那条——
+        这套解析住在 `jsx.element_color`，与本仓库另一条同族的证人共用一份实现
+        （两份必然飘）。
         """
         raw = (SRC / "components" / "JobReadout.tsx").read_text(encoding="utf-8")
         # **先剥注释再定位**。解释这条规则的那段注释里也写着「不算进分数」，
         # 直接 index() 会命中注释里那处，然后往前找到一个毫不相干的 <span>。
         # 这个形状本轮已经踩到第六次——判据一律只看真正渲染出去的东西。
         s = re.sub(r"\{/\*.*?\*/\}", " ", raw, flags=re.S)
-        i = s.index("不算进分数")
-        start = s.rindex("<span", 0, i)          # 包着它的那个开标签
-        tag = s[start:i]
-        self.assertIn("style=", tag, "定位到的不是带样式的那个元素")
-        self.assertNotIn("var(--caution)", tag,
+        css = (SRC / "theme" / "cockpit.css").read_text(encoding="utf-8")
+        color = element_color(s, "不算进分数", css)
+        self.assertIsNotNone(
+            color,
+            "这句话的着色来源找不到——判据看不见颜色就等于没在管，"
+            "别让它对着空气绿下去")
+        self.assertNotIn("var(--caution)", color,
                          "「不算进分数」用了警示色——那句话是安抚，信号反了")
 
     def test_the_data_path_is_stripped_too(self):

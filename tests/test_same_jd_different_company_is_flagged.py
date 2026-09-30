@@ -42,12 +42,15 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 from _live import user_or_skip  # noqa: E402
 import _cli  # noqa: E402
+import _srcscan  # noqa: E402
+from jsx import element_color  # noqa: E402
 
 EX = (ROOT / "tools" / "export_web_data.py").read_text(encoding="utf-8")
 APPLY = (ROOT / "workflows" / "job-apply.md").read_text(encoding="utf-8")
 TYPES = (ROOT / "web" / "src" / "types.ts").read_text(encoding="utf-8")
 READOUT = (ROOT / "web" / "src" / "components"
            / "JobReadout.tsx").read_text(encoding="utf-8")
+CSS = (ROOT / "web" / "src" / "theme" / "cockpit.css").read_text(encoding="utf-8")
 
 
 def flat(s: str) -> str:
@@ -177,8 +180,19 @@ class ThePanelShowsIt(unittest.TestCase):
         self.assertIn("d.company", seg)
 
     def test_it_is_marked_as_something_to_watch(self):
+        """这句话拿到的是琥珀（「要留意」），不是安抚色也不是判定色。
+
+        原来锚的是「条件表达式之后 400 个字符里有没有 `var(--caution)`」。
+        2026-09-30 把这条静态颜色从 inline style 收进 `.act-note.is-warn`，
+        窗口里再也没有那个字串——**而颜色一个字没变**，证人却红了。
+        窗口和「颜色写在哪」都不能当锚，所以改问：包着这句话的元素最终是什么色。
+        内联与 class 两条路都由 `jsx.element_color` 认（一份实现，两处共用）。
+        """
         i = READOUT.index("job.sameJd && job.sameJd.length > 0")
-        self.assertIn("var(--caution)", READOUT[i:i + 400])
+        seg = _srcscan.strip_comments(READOUT[i:])   # 注释里也写着这句话，先剥
+        color = element_color(seg, "公司写的却不是同一家", CSS)
+        self.assertEqual(color, "var(--caution)",
+                         "「另有 N 家同 JD」是要留意，不是安抚（灰）也不是不满足（红）")
 
     def test_the_merged_one_still_renders(self):
         """这一条是加的，`duplicates` 那条一个字不许动。"""

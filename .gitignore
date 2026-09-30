@@ -7,6 +7,9 @@ web/dist/
 web/*.tsbuildinfo
 # export_web_data.py 的输出：真实简历 PDF、话术、评估内容——个人数据，绝不进版本库
 web/public/
+# design-review 机审的输出（reports/*.json 与截图）。每跑一轮整体重写，
+# 是中间结果不是证据，所以不进版本库。真要留一张截图当基线，用 `git add -f` 点名它。
+web/.design-qa/
 
 # Python
 __pycache__/

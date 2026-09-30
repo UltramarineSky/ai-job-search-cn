@@ -1,0 +1,71 @@
+# 设计机审的配置。正本只有这一份，design-review 插件的脚本都从这里取参数。
+#
+# 放在 `web/` 而不是仓库根：`configDir` 决定所有相对路径的基准，
+# 而 `code.include` 的默认形状（`src/**`、`components/**`）正好是 `web/` 下的形状。
+# 放根目录就得另写一套 `web/src/**`，那是同一件事的第二份抄件。
+#
+# 阈值一律按「先把问题列出来」定，不按「现在能过」定：
+# 现在的真实底色是 1 处 palette 外 hex、5 处裸 rgba、22 处 inline style，
+# 全部预算 0 → 每条都会成为 finding，改完才往下收。
+project:
+  name: cockpit-web
+  # 这一页由 `tools/serve.py` 在本机起，端口 29029（JOBS_PORT 可覆盖）。
+  # 截图类脚本要用它，但那两个脚本依赖 playwright，本机没装 —— 见 README。
+  baseUrl: http://127.0.0.1:29029
+  outputDir: .design-qa
+
+design:
+  designMd: DESIGN.md
+  screenSpec: SCREEN_SPEC.md
+
+# 本机没装 playwright（插件 cache 里只有 fast-glob / yaml），所以以下两类跑不了：
+#   visual-regression-review/scripts/capture-ui-screenshot.mjs
+#   accessibility-review/scripts/audit-a11y.mjs
+# 截图与 axe 走 chrome-devtools 那条已装好的通路，本仓库不为此加依赖。
+# 下面只开能静态跑的三项。
+uiAlignment:
+  runVisualComparison: false
+  runComponentAudit: true
+  runDebtAudit: true
+  runA11yAudit: false
+
+code:
+  include:
+    - src/**/*.{ts,tsx,js,jsx,css,scss,html}
+  exclude:
+    - node_modules/**
+    - dist/**
+    - .design-qa/**
+
+components:
+  libraryImportPatterns:
+    - antd
+    - "../components/"
+    - "./"
+  # HidePrefs / HrAnswers / OutcomeStats 是**故意**用原生 button/div 的：
+  # 方章与密集偏好行的形制要求，antd 的 Tag/Button 给不出。
+  # 判据因此是「用了 antd 的地方别绕过它」，不是「一切都要 antd」。
+  rawElementPolicy:
+    select: prefer-design-system
+    textarea: prefer-design-system
+    dialog: prefer-design-system
+  allowedRawElementFiles:
+    - "src/components/HidePrefs.tsx"
+    - "src/components/HrAnswers.tsx"
+    - "src/components/OutcomeStats.tsx"
+    - "src/components/GateStamp.tsx"
+
+a11y:
+  disabledRules: []
+  includeSelectors: []
+  excludeSelectors:
+    - "[data-a11y-ignore]"
+
+debt:
+  maxHardCodedColors: 0
+  maxArbitraryTailwindValues: 0
+  maxInlineStyles: 0
+  # :root 之外不许出现字面量色。transparent / currentColor 不是颜色，放行；
+  # #fff 不放行 —— 它就是 `stamp-fail` 那处要查的东西。
+  allowedColorValues:
+    - transparent

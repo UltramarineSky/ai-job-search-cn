@@ -504,7 +504,7 @@ function ReadoutBody({ job, onExclude, onExpire, onChanged, reasons = [] }: {
                 15 份定制简历 15 份全部早于主简历，按钮照常只写
                 「打开定制简历 PDF」。面试官读的就是这一份。 */}
             {m?.resumeStale && (
-              <span className="act-note" style={{ color: "var(--caution)" }}>
+              <span className="act-note is-warn">
                 {`这份比主简历旧（主简历改于${m.resumeStale}）——发之前重出一份：`}
                 <Cmd>{`/job-cv ${job.url}`}</Cmd>
               </span>
@@ -529,7 +529,7 @@ function ReadoutBody({ job, onExclude, onExpire, onChanged, reasons = [] }: {
                 也可能是两家公司套了同一份模板（两个都该投）。判据在
                 `export_web_data` 那段注释里，这里只负责让他看得见。 */}
             {job.sameJd && job.sameJd.length > 0 && (
-              <span className="act-note" style={{ color: "var(--caution)" }}>
+              <span className="act-note is-warn">
                 这个岗的职位描述和另外 {job.sameJd.length} 个一字不差，公司写的却不是同一家：
                 {job.sameJd.map((d, i) => (
                   <a key={d.url} href={d.url} target="_blank" rel="noopener noreferrer">
@@ -542,7 +542,7 @@ function ReadoutBody({ job, onExclude, onExpire, onChanged, reasons = [] }: {
               </span>
             )}
             {unknowns.length > 0 && (
-              <span className="act-note" style={{ color: "var(--caution)" }}>
+              <span className="act-note is-warn">
                 投之前先问清 {unknowns.length} 条（见下方「硬性条件」）
               </span>
             )}
@@ -866,8 +866,8 @@ function ReadoutBody({ job, onExclude, onExpire, onChanged, reasons = [] }: {
           </p>
         )}
 
-        <div className="sec-head" style={{ marginTop: 22, marginBottom: 11 }}>
-          <h2 style={{ fontSize: 14.5 }}>硬性条件</h2>
+        <div className="sec-head is-readout">
+          <h2>{"硬性条件"}</h2>
           {/* 这句原来无条件显示。7 条全过、0 条待确认时，它在提醒一个不存在的情况
               ——框架自己论证过这种形状（竞业限制那节：「一条永远为真的提醒，
               对 99% 的岗位没有判别力」）。只在真有要留意的条目时才说。 */}
@@ -925,13 +925,7 @@ function ReadoutBody({ job, onExclude, onExpire, onChanged, reasons = [] }: {
                   这里有风险，其实这句话在说没风险。语义色跟着**这句话的意思**走，
                   不跟着它所在的区块走。 */}
               <span
-                className="kicker"
-                style={{
-                  marginLeft: "auto",
-                  color: "var(--faint)",
-                  border: "1px dashed var(--edge-strong)",
-                  padding: "2px 7px",
-                }}
+                className="kicker is-tag"
               >
                 不算进分数
               </span>

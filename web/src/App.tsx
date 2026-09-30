@@ -1040,7 +1040,7 @@ export default function App() {
               其余点开就在原地展开。不做成 Modal：它和「下一步」是同一件事，
               弹窗会把它变成「另一页」。 */}
           <div className="nextstep">
-            <span className="kicker" style={{ color: "var(--data)", flexShrink: 0 }}>
+            <span className="kicker">
               下一步
             </span>
             <span className="nextstep-text">{nsHead}</span>
@@ -1491,8 +1491,7 @@ export default function App() {
             <Collapse
               // `panel-flush`：正文就是上面那张表本身，两侧不要内缩，否则它和
               // 「可以投的岗位」那张主表对不齐（见 cockpit.css 的 .panel-flush）。
-              className="panel-collapse panel-flush"
-              style={{ marginTop: 18, border: 0 }}
+              className="panel-collapse panel-flush is-gap"
               ghost
               // 筛选开着时默认展开。流水线格子的契约是「格子上的数 = 点开看到的
               // 行数」（见 export_web_data.funnels_of），而这一档默认收起时
@@ -1560,7 +1559,6 @@ export default function App() {
           <Collapse
             // 同上：正文是一列整行卡片，自己撑满宽度
             className="panel-collapse panel-flush"
-            style={{ border: 0 }}
             ghost
             items={[
               {

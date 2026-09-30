@@ -13,7 +13,9 @@ import { theme, type ThemeConfig } from "antd";
  * 2. **等宽数字**。分数、权重、薪资、年限全是要对齐比较的数，
  *    所以数字统一 tabular-nums，字体栈里 mono 优先。
  * 3. **中文优先的字号下限**。中文字形在同等 px 下比拉丁更吃尺寸，
- *    所以 fontSize 基线抬到 14.5、fontSizeSM 抬到 13——低于 13 的中文在深底上读不清。
+ *    所以 fontSize 与 fontSizeSM 都压在 antd 默认之上——低于 13 的中文在深底上读不清。
+ *    （这里原来抄着一个具体基线值，后来代码改过一轮，注释没跟上，就变成假的了。
+ *    实际取值看下面的 `token`，判据看 `tests/test_cjk_never_goes_below_the_floor.py`。）
  */
 
 /**
@@ -46,7 +48,9 @@ const FONT_MONO =
 
 export const cockpitTheme: ThemeConfig = {
   // antd 6 起 CSS variables 主题**默认开启且不可关**（`cssVar` 只剩 prefix/key 两个
-  // 配置项，传 `true` 会 TS2559）。cockpit.css 直接引用 --ant-* 变量，正是靠这一点。
+  // 配置项，传 `true` 会 TS2559）。但 `cockpit.css` **不引用** `--ant-*`：那半句
+  // 以前写在这里，也写在 cockpit.css 顶上，两处都是抄来的说法、没有代码支撑，现在
+  // 一起改掉。这一层交给 antd 的颜色就是下面这些 token。
   // 同时关掉 hash：类名稳定，覆盖选择器才写得出来。
   hashed: false,
   algorithm: theme.darkAlgorithm,

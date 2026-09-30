@@ -105,6 +105,36 @@ class EveryCssVarIsDefined(unittest.TestCase):
         t = CSS.read_text(encoding="utf-8") + "\n.x { color: var(--opt, #fff); }\n"
         self.assertNotIn("--opt", self._undefined_in(t))
 
+    def test_jsx_inline_vars_resolve_against_the_css_layer(self):
+        """JSX 内联样式里的 `var(--x)` 也归这条管，正本在 `cockpit.css`。
+
+        2026-09-30 的漏网实例：`CommandBook.tsx` 两个 color 引的是
+        `--text-secondary` / `--text-tertiary`——名字抄自 antd 的角色名
+        （colorTextSecondary / Tertiary），本层根本没有这两个变量。整条声明作废、
+        字色静默回落到继承值，看起来只是「没那么灰」，实际是那两个层次的区分整个没了。
+        它活了很久，因为上面那条判据的扫描源只有 cockpit.css，JSX 里一条都看不见。
+
+        做法是**拼成一份文本、走同一个 `_undefined_in`**：变量定义取 cockpit.css 的，
+        引用取各 tsx 的。另抄一份正则就变成在验「我抄对了没有」。
+        """
+        parts = [CSS.read_text(encoding="utf-8")]
+        for f in sorted(SRC.rglob("*.tsx")):
+            parts.append(f.read_text(encoding="utf-8"))
+        joined = "\n".join(parts)
+        bad = self._undefined_in(joined)
+        self.assertEqual(
+            bad, {},
+            "JSX 的内联样式引了 cockpit.css 里没有的 CSS 变量（不报错，"
+            "但整条声明作废）：\n"
+            + "\n".join(f"  {v} 出现在第 {ls} 行（拼接后的文本）"
+                        for v, ls in sorted(bad.items())))
+        # 扫描源现在可能一条 var() 引用都没有（S3c 把静态内联样式都收进了 class），
+        # 那上面那条就是空跑。所以判据本身用**合成输入**自证还活着——
+        # 与本文件 `test_the_scan_can_actually_fail` 同一个手法、同一个函数。
+        probe = self._undefined_in(joined + '\n.x { color: var(--probe-not-defined); }\n')
+        self.assertIn("--probe-not-defined", probe,
+                      "拼进来的 tsx 根本没被这条判据看到——它已经退化成摆设")
+
     def test_palette_is_documented_as_the_whole_list(self):
         """`:root` 上要写着「只有这些」，否则下一个人还会再编一个。"""
         t = CSS.read_text(encoding="utf-8")
@@ -359,6 +389,25 @@ class MonospaceLetterSpacingIsLatinOnly(unittest.TestCase):
                              f"把正确的拆分写法误报了：{body!r}")
 
 
+def _mask_comments(t: str) -> str:
+    """把 `/* … */` 换成等长空白，**逐字符保住换行**。
+
+    这几条检查扫的是 CSS 原文，于是**注释里的字样会被当成规则**。2026-09-30 自己
+    绊了自己两次：解释作用域时写了一句「含 @media 里面的」，`BreakpointsStayTogether`
+    就当多了一个断点块；新加的作用域判据里写「见到 `.cockpit .cmdbook-row` 就红」，
+    它自己扫到就红了。两条都不是代码的问题。
+
+    不能直接删注释——下游拿偏移算行号，删掉之后行号整体错位。所以逐字符替换：
+    换行还是换行，其余变空格。
+
+    本文件里已有一个 `_strip_code`（JSX 那组用例在用），它把注释换成**一个空格**、
+    偏移会变，给不了行号。两者要的东西不同，不是同一件事的两份抄件。
+    """
+    def blank(m):
+        return "".join(ch if ch == "\n" else " " for ch in m.group(0))
+    return re.sub(r"/\*.*?\*/", blank, t, flags=re.S)
+
+
 def _media_blocks(t: str):
     """每个 `@media {...}` 的 (起, 止) 偏移。按花括号配对找块尾，不靠缩进。"""
     out = []
@@ -397,8 +446,22 @@ class BreakpointsStayTogether(unittest.TestCase):
     #: 相邻两块之间允许的空行/短注释行数。超过就是夹了别的东西。
     MAX_GAP = 6
 
+    def test_comment_text_is_not_mistaken_for_a_rule(self):
+        """控制用例：剥注释真的剥到了东西，而不是把判据剥成空转。
+
+        这条同时钉住两件事——原文里那句解释性的 `@media` 字样**不该**被当成断点，
+        而真的 `@media (max-width…)` 规则**必须**还剩下来。少了后一半，
+        「剥注释」可以悄悄退化成「什么都扫不到然后全绿」。
+        """
+        raw = CSS.read_text(encoding="utf-8")
+        masked = _mask_comments(raw)
+        self.assertLess(masked.count("@media"), raw.count("@media"),
+                        "注释里那句 @media 的字样没被剥掉——这条修正等于没做")
+        self.assertGreaterEqual(len(_media_blocks(masked)), 4,
+                                "剥完注释几乎扫不到断点了：判据正在空转")
+
     def test_all_media_queries_are_in_one_place(self):
-        t = CSS.read_text(encoding="utf-8")
+        t = _mask_comments(CSS.read_text(encoding="utf-8"))
         blocks = _media_blocks(t)
         self.assertTrue(blocks, "一个断点都没有？")
         bad = []
@@ -619,9 +682,9 @@ class ScrollContainersDoNotShowTheirBars(unittest.TestCase):
     """
 
     def test_chip_scroll_container_hides_its_scrollbars(self):
-        css = CSS.read_text(encoding="utf-8")
+        css = _mask_comments(CSS.read_text(encoding="utf-8"))
         m = re.search(
-            r"\.cockpit \.cmdbook-row \.ant-typography code,.*?\{([^}]*)\}",
+            r"body \.cmdbook-row \.ant-typography code,.*?\{([^}]*)\}",
             css, re.S)
         self.assertIsNotNone(m, "找不到命令 chip 那条规则")
         block = m.group(1)
@@ -629,9 +692,27 @@ class ScrollContainersDoNotShowTheirBars(unittest.TestCase):
         self.assertIn("scrollbar-width: none", block,
                       "设了横滚容器却没关滚动条——2px 的假溢出会长出两条 15px 的真条")
 
+    def test_chip_rules_are_scoped_to_body_not_the_cockpit_root(self):
+        """命令 chip 那三条必须从 `body` 起，不能挂在 `.cockpit` 下。
+
+        面板（antd Modal）与 Tooltip 走 portal，节点挂在 `document.body` 上，
+        写在 `.cockpit` 底下的覆盖**一条都到不了面板里**。而 `.cmdbook-row`
+        恰恰只在面板里出现 65 次——2026-09-30 之前这条规则就是这么「写了却没生效」：
+        注释记着当年修的 chip 断行 bug（实测 390px 流水线），可那个修复
+        在它唯一需要起作用的地方从来没被应用过，复制图标也一起退回 13×15。
+
+        所以这里钉的是作用域本身：出现 `.cockpit .cmdbook-row` 就是红。
+        """
+        css = _mask_comments(CSS.read_text(encoding="utf-8"))
+        bad = re.findall(r"\.cockpit\s+\.cmdbook-row[^{]*", css)
+        self.assertEqual(bad, [],
+                         "命令 chip 的覆盖又挂回 .cockpit 底下了——面板是 portal 到 "
+                         "body 的，这些规则在面板里一条都不会生效："
+                         + " ; ".join(x.strip() for x in bad))
+
     def test_the_webkit_fallback_covers_the_same_selectors(self):
         """`scrollbar-width` 要 Chrome 121+ / Safari 18.2+，旧内核只认伪元素。"""
-        css = CSS.read_text(encoding="utf-8")
+        css = _mask_comments(CSS.read_text(encoding="utf-8"))
         m = re.search(r"([^{}]*::-webkit-scrollbar\s*\{[^}]*display:\s*none[^}]*\})", css)
         self.assertIsNotNone(m, "没有 ::-webkit-scrollbar 兜底")
         for chain in ("cmdbook-row", "rail-cell", "nextstep", "readout"):

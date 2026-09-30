@@ -256,9 +256,31 @@ class ThePanelCanRecordIt(unittest.TestCase):
         self.assertNotIn('[data-stale="ok"]', seg)
 
     def test_the_narrow_screen_gets_its_own_row(self):
-        """招聘网站那一块在窄屏塌成两列，这一格不跟着就会把行挤爆。"""
-        i = CSS.index(".cockpit .portal-last")
-        self.assertIn(".cockpit .portal-refresh", CSS[i:i + 200])
+        """招聘网站那一块在窄屏塌成两列，这一格不跟着就会把行挤爆。
+
+        锚只认「某条把 `.portal-last` 与 `.portal-refresh` 一起设成
+        `grid-column: 1 / -1` 的规则」，**不认作用域前缀**——2026-09-30 那轮
+        把这组塌缩从 `.cockpit` 改成了 `body`：面板是 portal 到 body 的，
+        挂在 `.cockpit` 底下时这条规则在招聘网站面板里一次都没生效过。
+        前缀不由这条管，单独钉在下面那条。
+        """
+        hits = [b for sel, b in re.findall(r"([^{}]+)\{([^{}]*)\}", CSS)
+                if ".portal-last" in sel and ".portal-refresh" in sel
+                and "grid-column: 1 / -1" in b]
+        self.assertTrue(hits,
+                        "窄屏那条让 .portal-last / .portal-refresh 各占一整行的规则不见了")
+
+    def test_the_collapse_is_not_scoped_under_the_cockpit_root(self):
+        """招聘网站那组塌缩规则不许再挂回 `.cockpit`。
+
+        面板（antd Modal）与 Tooltip 走 portal，节点挂在 `document.body` 上，
+        `.cockpit .portal-*` 在面板里一条都匹配不到——这正是它「写了却从没工作过」
+        的原因（2026-09-30 实测：`.portal-row` 在 390px 上仍是五列）。
+        """
+        bad = re.findall(r"\.cockpit\s+\.portal-[a-z-]*", CSS)
+        self.assertEqual(bad, [],
+                         "招聘网站的窄屏规则又挂回 .cockpit 了，面板里不会生效："
+                         + " ; ".join(bad))
 
     def test_the_client_keeps_the_undo(self):
         self.assertIn('export function postResumeRefreshed(name: string, day?: "")',

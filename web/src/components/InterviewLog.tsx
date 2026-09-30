@@ -30,8 +30,8 @@ export function InterviewLog({ job }: { job: Job }) {
 
   return (
     <div className="ilog">
-      <div className="sec-head" style={{ marginTop: 22, marginBottom: 9 }}>
-        <h2 style={{ fontSize: 14.5 }}>面试练习记录</h2>
+      <div className="sec-head is-readout">
+        <h2>{"面试练习记录"}</h2>
         <span className="sec-note">
           {log.length} 轮 · {totalQ} 题 · 最近的排最前 ·
           答案是原话，没润色

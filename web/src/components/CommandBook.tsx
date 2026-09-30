@@ -76,18 +76,8 @@ export function CommandBook(
 
   return (
     <div className="cmdbook">
-      <div
-        style={{
-          marginBottom: 14,
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          flexWrap: "wrap",
-        }}
-      >
-        <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-          {"终端工具适配："}
-        </span>
+      <div className="cmdbook-bar">
+        <span className="cmdbar-label">{"终端工具适配："}</span>
         <Radio.Group
           size="small"
           value={isSlashMode ? "slash" : "no_slash"}
@@ -97,7 +87,7 @@ export function CommandBook(
           <Radio.Button value="no_slash">{"免斜杠模式"}</Radio.Button>
           <Radio.Button value="slash">{"斜杠模式"}</Radio.Button>
         </Radio.Group>
-        <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+        <span className="cmdbar-note">
           {isSlashMode
             ? "已开启斜杠模式：复制出来的命令带开头的 `/`，用得上客户端的快捷指令"
             : "已开启免斜杠模式：复制出来的命令不带开头的 `/`，直接粘进对话框就能用"}

@@ -650,7 +650,7 @@ export function Shortlist({
             placeholder="搜职位名、公司、地点、薪资、结论、来源"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            style={{ maxWidth: 320 }}
+            className="sl-search"
           />
           {channels.length > 1 && (
             <Select
@@ -662,7 +662,7 @@ export function Shortlist({
                 value: c,
                 label: `${c}（${jobs.filter((j) => j.channel === c).length}）`,
               }))}
-              style={{ minWidth: 168 }}
+              className="sl-filter"
             />
           )}
           {(kw || channel) && (

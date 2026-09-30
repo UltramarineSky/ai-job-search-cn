@@ -2,7 +2,10 @@
    仪表舱 · 视觉层
    antd 的 token 负责组件内部；这一层负责「让它看起来不是 antd」：
    自有布局、签名元素（四态方章 / 权重带）、以及对 antd 默认观感的定点覆盖。
-   所有颜色都取自 --ant-* 或下面这几个自有变量，不散落硬编码色值。
+   这一层的颜色一律取自下面这几个自有变量，不散落硬编码色值；antd 组件内部的颜色
+   由 `tokens.ts` 的 theme token 定。两边各有正本：这一层**不引用** antd 派生的
+   `--ant-*` 变量（以前这里写着「取自 --ant-* 或下面这几个」，那半句是假的——
+   写了的人和自己都被骗过一次，`tokens.ts` 里那句同样的话一起改了）。
    ============================================================ */
 
 :root {
@@ -18,11 +21,27 @@
   --data-deep: #1e6e68;
   --caution: #e8ac3a;
   --lock: #e86259;
+  /* 红的暗调：斜纹方章的印面底色。`--lock` 压白字只有 3.32:1（14px 不算大号字，
+     AA 要 4.5），而 `--lit` 压这一档实测 7.4:1。掺黑比例照 `--data-deep` 那一档来，
+     不是新色相。 */
+  --lock-deep: #803631;
 
   --mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, Consolas, monospace;
   --serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "SimSun", serif;
 
   --gutter: clamp(16px, 2.5vw, 34px);
+
+  /* 文字标度。正本在 web/DESIGN.md 的 Typography 一节，数写在 CSS 这边是因为
+     cockpit.css 与 JSX 要引同一个值；`--fs-*` 一旦写开，改档只改一行。
+     `tests/test_cjk_never_goes_below_the_floor.py` 要先 var() 解成 px 才看得见谁贴地板。
+     纯数字与拉丁的小字号（11 / 11.5px）不进这套标度——那是层级不是文字档。 */
+  --fs-micro: 12px;
+  --fs-meta: 12.5px;
+  --fs-small: 13px;
+  --fs-label: 13.5px;
+  --fs-content: 14px;
+  --fs-body: 15px;
+  --fs-stamp: 14px;      /* 方章印文：一格见方里的单字，不是文字层级 */
   /* 只有上面这些。用 var(--别的) 不会报错，只会让整条声明**无效**，属性静默
      回落到继承值——字还看得见，但你想要的层次没了，所以特别难发现。
      实测一次抓出 15 处：--muted ×12、--line/--hair/--ink 各 1。
@@ -62,7 +81,7 @@ body {
 
 /* 中文小标签：字距收到 0.04em，不转大写 */
 .kicker {
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.04em;
   color: var(--faint);
 }
@@ -75,14 +94,14 @@ body {
 .mast-word { font-size: 19px; font-weight: 700; letter-spacing: 0.04em; }
 /* 演示数据标记：显眼但不喧哗——它的作用是让人一眼知道"这些不是我的数据" */
 .demo-flag {
-  font-size: 12.5px; color: var(--caution); line-height: 1.5;
+  font-size: var(--fs-meta); color: var(--caution); line-height: 1.5;
   border: 1px dashed var(--caution); padding: 3px 9px;
 }
 .demo-flag code { font-family: var(--mono); font-size: 11.5px; color: var(--caution); }
-.loading { padding: 40px 0; color: var(--faint); font-size: 14px; }
+.loading { padding: 40px 0; color: var(--faint); font-size: var(--fs-content); }
 
 .mast-user { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-.mast-user b { font-size: 15px; font-weight: 600; }
+.mast-user b { font-size: var(--fs-body); font-weight: 600; }
 
 /* ---------- 流水线读数 ---------- */
 .rail {
@@ -108,8 +127,37 @@ body {
    表头的排序键（`.ant-table-column-has-sorters`）**一个环都没有**；
    「不想看什么」和「另有 N 个已投出去」拿到的是浏览器默认的
    `rgb(16,16,16) auto 1px`——**深色底上那圈近黑的 1px 等于没有**。
+   **作用域必须是 `body`，不能是 `.cockpit`。** 面板（antd Modal）与 Tooltip 走的是
+   portal，挂在 `document.body` 上，写在 `.cockpit` 底下的一切**都到不了那七个面板里**。
+   2026-09-30 递归扫样式表（含 @media 里面的）：24 条 `.cockpit` 作用域的选择器里，9 条匹配不到任何面板内节点，窄屏塌缩那几条全在这一批里。判据不靠人记——
+   `tests/test_css_and_cjk_text.py::test_chip_rules_are_scoped_to_body_not_the_cockpit_root` 见到 `.cockpit .cmdbook-row` 就红。
+   兜底挂在 `.cockpit` 上，等于给面板里的元素留了个「看着有、其实没有」的假象。
    兜底一条，新加的元素默认就有；上面那几条各自的 offset 是有意调过的，留着。 */
-.cockpit :focus-visible { outline: 2px solid var(--data); outline-offset: 2px; }
+body :focus-visible { outline: 2px solid var(--data); outline-offset: 2px; }
+
+/* ── 按下反馈 ──
+   这一页 `motion: false`（原因写在 tokens.ts：prefers-reduced-motion 下 antd 会把
+   元素停在 opacity:0 那一帧），所以按下**不能靠动画**，只有一档静态底色：
+   底色沉到 bay、字提到 lit。原来全仓一条 `:active` 都没有——从按下去到内容变化
+   之间是空的，那不到半秒里界面不说「我收到了」。
+
+   作用域跟着上一条走 `body`：面板里的按钮（HR 常问的那批、命令面板里的 chip）
+   和主页面是同一套控件，只管主页面就又是「看着有、其实没有」。
+
+   两样故意不进这个集合：
+   · 表格行——点下去整行展开，那本身就是回执，再叠一层底色只会闪一下。
+   · `.have-jump`——它的底色是**筛选开着/关着**的状态色，按下色盖上去会把状态读没。 */
+body .rail-hit:active:not(:disabled),
+body .deskbtn:active,
+body .hrqa-btn:active:not(:disabled),
+body .portal-refresh:active,
+body .shelf-restore:active,
+body .nextstep-more:active,
+body .why-chip:active,
+body .hide-chips button:active,
+body .chan > summary:active {
+  background: var(--bay); color: var(--lit);
+}
 /* 表头排序键要单独一条：antd 写了
    `.ant-table-wrapper .ant-table-thead th.ant-table-column-has-sorters { outline: none }`
    （0,3,1），把上面的兜底（0,2,0）压掉了——不加这条，Tab 到「分 / 技能 / 年包」
@@ -127,7 +175,7 @@ body {
   font-family: var(--mono); font-size: 34px; font-weight: 700;
   line-height: 1.05; letter-spacing: -0.02em; margin-top: 3px;
 }
-.rail-n { font-size: 13px; color: var(--dim); }
+.rail-n { font-size: var(--fs-small); color: var(--dim); }
 /* 步骤序号：等宽数字 + 一条短横，读作「第 N 步」而不占一行中文 */
 .rail-step {
   /* 底色比正文区亮（卡片是 `--panel-raised`），`--faint` 压上去只有 4.29，
@@ -145,33 +193,41 @@ body {
 /* ---------- 下一步：全页唯一的实色强调块 ---------- */
 .nextstep {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  border: 1px solid var(--data-deep); background: rgba(60, 203, 191, 0.075);
+  border: 1px solid var(--data-deep); background: color-mix(in srgb, var(--data) 7.5%, transparent);
   padding: 13px 16px; margin-bottom: 12px;
 }
-.nextstep-text { font-size: 15px; font-weight: 600; flex: 1; min-width: 220px; }
+.nextstep-text { font-size: var(--fs-body); font-weight: 600; flex: 1; min-width: 220px; }
+/* 「下一步」那一横排的眉标：青色是这一排的签名色（原来用 inline style 挂，
+   于是同一条颜色在 JSX 里抄了一份，CSS 这半边看不见它）。 */
+.nextstep .kicker { color: var(--data); flex-shrink: 0; }
 
 /* 「为什么」：它是这一句的脚注，不是一个平级动作 —— 所以做成一条下划线文字，
    不是按钮。旁边那颗才是要他敲的东西，两个长得一样会分掉注意力。 */
 .nextstep-more {
-  background: none; border: 0; padding: 0; cursor: pointer;
-  font: inherit; font-size: 12.5px; font-weight: 400;
+  /* 实测 38×21，手指按不准。上下左右各撑一点，再用等量负边距抵掉，行高不动。 */
+  background: none; border: 0; padding: 2px 6px; margin: -2px -6px; cursor: pointer;
+  font: inherit; font-size: var(--fs-meta); font-weight: 400;
   color: var(--faint); text-decoration: underline; text-underline-offset: 3px;
   flex-shrink: 0;
 }
 .nextstep-more:hover { color: var(--lit); }
 .nextstep-why {
   border: 1px solid var(--edge); border-top: 0;
-  background: rgba(60, 203, 191, 0.03);
+  background: color-mix(in srgb, var(--data) 3%, transparent);
   margin: -12px 0 12px; padding: 11px 16px;
-  font-size: 13.5px; line-height: 1.75; color: var(--dim);
+  font-size: var(--fs-label); line-height: 1.75; color: var(--dim);
 }
 
 /* ---------- 段标题 ---------- */
 .sec-head { display: flex; align-items: baseline; gap: 13px; margin-bottom: 13px; }
-.sec-head h2 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: 0.02em; }
-.sec-head .sec-note { margin-left: auto; font-size: 12.5px; color: var(--faint); }
+.sec-head h2 { font-size: var(--fs-body); font-weight: 600; margin: 0; letter-spacing: 0.02em; }
+/* 评估正文里的小节头（硬性条件 / 面试练习）：与主表那批同族，只是上面要留口气。
+   原来这两处各写一遍 inline style，一个是 marginBottom 9、一个是 11 ——
+   差的那 2px 没有任何说法，收成一档。 */
+.sec-head.is-readout { margin-top: 22px; margin-bottom: 10px; }
+.sec-head .sec-note { margin-left: auto; font-size: var(--fs-meta); color: var(--faint); }
 .sec-count {
-  font-family: var(--mono); font-size: 12.5px; font-weight: 700; color: var(--data);
+  font-family: var(--mono); font-size: var(--fs-meta); font-weight: 700; color: var(--data);
   font-variant-numeric: tabular-nums; border: 1px solid var(--data-deep);
   padding: 1px 7px; letter-spacing: 0;
 }
@@ -185,7 +241,7 @@ body {
 .stamp {
   position: relative; flex-shrink: 0; display: grid; place-items: center;
   width: 30px; height: 30px;
-  font-family: var(--serif); font-size: 14px; font-weight: 700; line-height: 1;
+  font-family: var(--serif); font-size: var(--fs-stamp); font-weight: 700; line-height: 1;
 }
 .stamp > span { position: relative; z-index: 1; }
 .stamp::before { content: ""; position: absolute; inset: 0; border-radius: 2px; }
@@ -195,15 +251,15 @@ body {
   background: var(--data);
   box-shadow: inset 0 0 0 2px var(--bay), inset 0 0 0 3px var(--data);
 }
-.stamp[data-state="fail"] { color: #fff; }
+.stamp[data-state="fail"] { color: var(--lit); }
 .stamp[data-state="fail"]::before {
-  background: var(--lock);
+  background: var(--lock-deep);
   background-image: repeating-linear-gradient(45deg, rgba(0,0,0,.26) 0 2px, transparent 2px 5px);
   box-shadow: inset 0 0 0 2px var(--bay), inset 0 0 0 3px var(--lock);
 }
 .stamp[data-state="unknown"] { color: var(--caution); }
 .stamp[data-state="unknown"]::before {
-  box-shadow: inset 0 0 0 1.5px var(--caution); background: rgba(232,172,58,.09);
+  box-shadow: inset 0 0 0 1.5px var(--caution); background: color-mix(in srgb, var(--caution) 9%, transparent);
 }
 .stamp[data-state="na"] { color: var(--faint); }
 .stamp[data-state="na"]::before { border: 1px dashed var(--edge-strong); }
@@ -225,22 +281,22 @@ body {
   display: flex; align-items: center; gap: 11px; padding: 9px 12px;
   background: var(--panel-raised); border: 1px solid var(--edge);
 }
-.gate-name { flex: 1; font-size: 14px; line-height: 1.35; }
+.gate-name { flex: 1; font-size: var(--fs-content); line-height: 1.35; }
 /* 注意：这里**不能**用 var(--mono)。内容是中文句子夹拉丁（「不限 211/985」），
    等宽栈里中文会 fallback 到另一套字面，中英之间炸出大间隙。mono 只留给纯数字。 */
-.gate-why { display: block; font-size: 12px; color: var(--faint); margin-top: 2px; }
+.gate-why { display: block; font-size: var(--fs-micro); color: var(--faint); margin-top: 2px; }
 /* 自造门名那一行的小标。灰而不弱：它要能被看见（那是要去改的证据），
    但绝不能抢过判定章 —— 那一行本来就不该在这张表里。
    不加字距：那条规矩只对拉丁文成立（AGENTS.md 末尾）。 */
-.gate-offspec { margin-left: 6px; font-size: 12px; color: var(--faint);
-  border: 1px solid var(--edge-strong); border-radius: 3px; padding: 0 4px;
+.gate-offspec { margin-left: 6px; font-size: var(--fs-micro); color: var(--faint);
+  border: 1px solid var(--edge-strong); border-radius: 2px; padding: 0 4px;
   vertical-align: 1px; white-space: nowrap; }
 /* assumed 的判定其实是「满足」，只是依据来自你资料里未确认的假设值 —— 所以走琥珀
    （待确认），**不能**走红色：红色在本页只表示不合格，用在这里会让人以为这条挂了。 */
 .gate[data-flag="ask"] { border-color: var(--caution); }
 .gate[data-flag="ask"] .gate-why { color: var(--caution); }
 .gate[data-flag="unknown"] .gate-why { color: var(--caution); }
-.gate-note { margin: 12px 0 0; font-size: 13px; color: var(--dim); }
+.gate-note { margin: 12px 0 0; font-size: var(--fs-small); color: var(--dim); }
 
 
 /* 技能列：颜色只表达一件事——这个总分主要是谁撑起来的。
@@ -259,13 +315,13 @@ body {
 .lg-down { color: var(--caution); font-weight: 600; }
 /* 年包：等宽数字便于上下对齐比较；按 12 薪估的用虚下划线提示「这是估的」 */
 .annual {
-  font-family: var(--mono); font-size: 14px; color: var(--lit);
+  font-family: var(--mono); font-size: var(--fs-content); color: var(--lit);
   font-variant-numeric: tabular-nums; white-space: nowrap; cursor: help;
 }
 /* 单位「万」比数字小一档是有意的层级，但 11px 是**汉字**，压在自家定的下限
    （tokens.ts「低于 13 的中文在深底上读不清」）以下 —— 全页扫下来它是最后一个。
    12px：仍然明显小于数字、层级不丢，字形不再糊。 */
-.annual em { font-style: normal; font-size: 12px; color: var(--faint); margin-left: 1px; }
+.annual em { font-style: normal; font-size: var(--fs-micro); color: var(--faint); margin-left: 1px; }
 .annual[data-assumed="true"] {
   color: var(--dim); border-bottom: 1px dashed var(--edge-strong);
 }
@@ -279,7 +335,7 @@ body {
    把整份名单里从不变化的那几样从每一行里抽出来，在表头说一次。
    它是**说明**不是标记，所以不给边框、不给强调色：一行轻字，扫过去就行。 */
 .sl-const {
-  margin: 0 0 8px; font-size: 12.5px; line-height: 1.6; color: var(--faint);
+  margin: 0 0 8px; font-size: var(--fs-meta); line-height: 1.6; color: var(--faint);
 }
 
 /* **中文小标签的字号下限是 12.5px**（与 `.kicker` 齐平）。
@@ -294,7 +350,7 @@ body {
 .bresume-elsewhere code {
   display: block; margin-top: 3px; padding: 5px 8px;
   background: var(--panel-raised); border-left: 2px solid var(--edge-strong);
-  font-family: var(--mono); font-size: 12px; line-height: 1.7; color: var(--lit);
+  font-family: var(--mono); font-size: var(--fs-micro); line-height: 1.7; color: var(--lit);
   white-space: pre-wrap; word-break: break-all;
 }
 /* 评估自己的结论（「建议」那一节）。**排在最前面**——它回答的是
@@ -302,7 +358,7 @@ body {
    说「不投」的那些描红：它和上面那枚判词可以合法地不一致，
    而不一致的时候，用户要一眼看出该听哪一个。 */
 .job-advice {
-  margin: 0 0 12px; padding: 9px 12px; font-size: 13px; line-height: 1.75;
+  margin: 0 0 12px; padding: 9px 12px; font-size: var(--fs-small); line-height: 1.75;
   color: var(--lit);
   border-left: 2px solid var(--faint);
   background: color-mix(in srgb, var(--faint) 6%, transparent);
@@ -321,15 +377,15 @@ body {
   background: color-mix(in srgb, var(--caution) 7%, transparent);
 }
 .ask-before ul { margin: 5px 0 0; padding-left: 1.15em; }
-.ask-before li { font-size: 13px; line-height: 1.75; color: var(--lit); }
-.ask-before p { margin: 6px 0 0; font-size: 12.5px; line-height: 1.7; color: var(--faint); }
+.ask-before li { font-size: var(--fs-small); line-height: 1.75; color: var(--lit); }
+.ask-before p { margin: 6px 0 0; font-size: var(--fs-meta); line-height: 1.7; color: var(--faint); }
 /* 开场白发之前要删掉的几处。挨着那段话本身放——它说的是「这段话里的哪几个字」，
    隔一段就对不上号了。--caution：不是错，是发之前顺手删掉。 */
 .greet-warn {
   margin: 6px 0 0; padding: 7px 10px;
   border-left: 2px solid var(--caution);
   background: color-mix(in srgb, var(--caution) 8%, transparent);
-  font-size: 12.5px; line-height: 1.7; color: var(--lit);
+  font-size: var(--fs-meta); line-height: 1.7; color: var(--lit);
 }
 /* 「在跟谁说话」那条与上面那条同款，只把左边那道竖线换个色：
    上面那条是「这段字里有该删的东西」，这条是「你可能对错了人」——
@@ -340,7 +396,7 @@ body {
 /* 「话术备好 · 先问清」——「可以考虑」那一档的材料章。与「材料就绪」同形制，
    但用 --caution：它不是「可以发了」，是「还差一步」。 */
 .ask-chip {
-  display: inline-block; margin-top: 4px; font-size: 12.5px; letter-spacing: 0.04em;
+  display: inline-block; margin-top: 4px; font-size: var(--fs-meta); letter-spacing: 0.04em;
   color: var(--caution);
   border: 1px solid color-mix(in srgb, var(--caution) 45%, transparent);
   padding: 1px 6px; white-space: nowrap;
@@ -348,7 +404,7 @@ body {
 /* 「N 天没刷新」——招聘方两周没动过这个岗。与「没读 JD」同族：都是提醒不是错误，
    都用 --caution。区别在于那个说的是**我们**没读全，这个说的是**对方**没在跟。 */
 .stale-chip {
-  display: inline-block; margin-top: 4px; font-size: 12.5px; letter-spacing: 0.04em;
+  display: inline-block; margin-top: 4px; font-size: var(--fs-meta); letter-spacing: 0.04em;
   color: var(--caution);
   border: 1px solid color-mix(in srgb, var(--caution) 45%, transparent);
   padding: 1px 6px; white-space: nowrap;
@@ -356,13 +412,13 @@ body {
 /* 「排了 N 天没发」——你压着它多久。与 `.stale-chip` 同族（都是提醒不是
    判决），但**换一个色**：那个说的是招聘方没动，这个说的是你没动，
    混成一个颜色就读成同一件事了。中文不加字距（AGENTS.md 末尾）。 */
-.queued-chip { font-size: 12px; color: var(--caution);
-  border: 1px solid var(--edge-strong); border-radius: 3px;
+.queued-chip { font-size: var(--fs-micro); color: var(--caution);
+  border: 1px solid var(--edge-strong); border-radius: 2px;
   padding: 0 4px; margin-left: 6px; white-space: nowrap; }
 /* 「没读 JD」——**这一族里唯一的提醒**。它标的是「这个岗的分只按列表卡片评的」，
    而那正是要人自己去看一眼原文的那一行。用 --caution：不是错误，是「留个神」。 */
 .raw-chip {
-  display: inline-block; margin-top: 4px; font-size: 12.5px; letter-spacing: 0.04em;
+  display: inline-block; margin-top: 4px; font-size: var(--fs-meta); letter-spacing: 0.04em;
   color: var(--caution);
   border: 1px solid color-mix(in srgb, var(--caution) 45%, transparent);
   padding: 1px 6px; white-space: nowrap;
@@ -380,23 +436,23 @@ body {
 }
 
 .score-src {
-  display: block; font-style: normal; font-size: 12.5px;
+  display: block; font-style: normal; font-size: var(--fs-meta);
   color: var(--faint); margin-top: 5px; letter-spacing: 0.02em;
 }
 .mat-chip {
-  display: inline-block; margin-top: 4px; font-size: 12.5px; letter-spacing: 0.04em;
+  display: inline-block; margin-top: 4px; font-size: var(--fs-meta); letter-spacing: 0.04em;
   color: var(--dim); border: 1px solid var(--edge-strong); padding: 1px 6px;
   white-space: nowrap;
 }
 /* 已投：与「材料就绪」同形制，但用中性色——它是事实不是建议 */
 .sent-chip {
-  display: inline-block; margin-top: 4px; font-size: 12.5px; letter-spacing: 0.04em;
+  display: inline-block; margin-top: 4px; font-size: var(--fs-meta); letter-spacing: 0.04em;
   color: var(--dim); border: 1px solid var(--edge-strong); padding: 1px 6px;
   white-space: nowrap;
 }
 
 .rec-chip {
-  display: inline-block; margin-top: 5px; font-size: 12.5px; letter-spacing: 0.04em;
+  display: inline-block; margin-top: 5px; font-size: var(--fs-meta); letter-spacing: 0.04em;
   color: var(--data); border: 1px solid var(--data-deep); padding: 1px 6px;
   white-space: nowrap;
 }
@@ -407,7 +463,7 @@ body {
 .shortlist .ant-table-thead > tr > th {
   /* 表头底色比表体亮，`--faint` 在它上面只有 3.93（AA 要 4.5）。
      表头是「分 / 技能 / 年包」这几个可排序的列名，读不清等于不知道能按什么排。 */
-  font-size: 12px; letter-spacing: 0.06em; font-weight: 400; color: var(--dim);
+  font-size: var(--fs-micro); letter-spacing: 0.06em; font-weight: 400; color: var(--dim);
 }
 /* antd 默认给表头单元格之间加竖分隔条，这里靠留白分栏，去掉它 */
 .shortlist .ant-table-thead > tr > th::before { display: none !important; }
@@ -423,10 +479,10 @@ body {
 .score i {
   display: block; font-family: var(--serif); font-style: normal;
   /* 判词是纯中文（强匹配/值得投），字距压到中文上限 0.04em */
-  font-size: 12px; letter-spacing: 0.04em; margin-top: 3px;
+  font-size: var(--fs-micro); letter-spacing: 0.04em; margin-top: 3px;
 }
-.job-title { font-size: 15.5px; font-weight: 600; line-height: 1.4; }
-.job-meta { font-size: 13px; color: var(--dim); margin-top: 2px; }
+.job-title { font-size: var(--fs-body); font-weight: 600; line-height: 1.4; }
+.job-meta { font-size: var(--fs-small); color: var(--dim); margin-top: 2px; }
 /* 标记横着排在公司/地点后面。原来它们竖着堆在 88px 的分数格里，一行堆四层，
    把行高撑到 130px；这一列在 1440px 下本来就空着五百多像素。 */
 .job-chips {
@@ -461,13 +517,13 @@ body {
 }
 
 .no-detail {
-  margin: 0; padding: 12px 15px; font-size: 13.5px; line-height: 1.75;
+  margin: 0; padding: 12px 15px; font-size: var(--fs-label); line-height: 1.75;
   color: var(--dim); background: var(--panel);
   border: 1px dashed var(--edge-strong);
 }
 .no-detail b { color: var(--caution); font-weight: 600; }
 .no-detail code {
-  font-family: var(--mono); font-size: 12.5px; color: var(--data);
+  font-family: var(--mono); font-size: var(--fs-meta); color: var(--data);
   background: var(--bay); padding: 1px 6px; border: 1px solid var(--edge);
 }
 
@@ -478,16 +534,16 @@ body {
   padding: 17px 18px 15px; border-bottom: 1px solid var(--edge);
 }
 .readout-title { font-size: 20px; font-weight: 700; line-height: 1.3; margin: 0; }
-.readout-meta { font-size: 13.5px; color: var(--dim); margin: 4px 0 0; }
+.readout-meta { font-size: var(--fs-label); color: var(--dim); margin: 4px 0 0; }
 .readout-meta b { color: var(--lit); font-weight: 600; }
-.readout-meta code { font-family: var(--mono); font-size: 12.5px; color: var(--data); }
+.readout-meta code { font-family: var(--mono); font-size: var(--fs-meta); color: var(--data); }
 .readout-score { margin-left: auto; text-align: right; }
 .readout-score b { font-family: var(--mono); font-size: 46px; font-weight: 700; line-height: .9; }
 .readout-score i {
   display: block; font-family: var(--serif); font-style: normal;
-  font-size: 14px; letter-spacing: 0.16em; margin-top: 6px;
+  font-size: var(--fs-content); letter-spacing: 0.16em; margin-top: 6px;
 }
-.readout-facts { font-size: 13.5px; color: var(--dim); margin: 5px 0 0; }
+.readout-facts { font-size: var(--fs-label); color: var(--dim); margin: 5px 0 0; }
 .readout-facts .warn { color: var(--caution); }
 .readout-body { padding: 17px 18px 19px; }
 
@@ -499,14 +555,14 @@ body {
   background: var(--panel-raised); border: 1px solid var(--edge-strong);
 }
 .act-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.act-label { font-size: 12.5px; color: var(--faint); }
+.act-label { font-size: var(--fs-meta); color: var(--faint); }
 /* 开场白那一行：按钮在前、说明在后。整页最常按的一下不该排在一句说明的末尾。 */
 .greet-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 /* 带字的复制按钮。方形语言，与页面上别的按钮同形制，只是更亮一档——
    它是这一块里唯一要人动手的东西。 */
 .copy-btn.ant-typography {
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 4px 11px; font-size: 13px; font-weight: 600;
+  padding: 4px 11px; font-size: var(--fs-small); font-weight: 600;
   color: var(--data); border: 1px solid var(--data-deep);
   background: color-mix(in srgb, var(--data) 10%, transparent);
   cursor: pointer;
@@ -543,16 +599,19 @@ body {
    正是这一页最该一点就走的两件事。
    用内边距把可点区撑到 27×29，再用等量负外边距抵掉，**版面一个像素不动**
    （放大盒子会把命令行的行高顶开，实测多出 6px）。 */
-.cockpit .ant-typography-copy {
-  /* 挂在 `.cockpit` 上而不是 `.cmd` / `.copy-btn`：实测这 7 个图标的祖先链是
+body .ant-typography .ant-typography-copy {   /* (0,2,1)：既出面板又压得住 antd */
+  /* 挂在 `body` 上而不是 `.cmd` / `.copy-btn`：实测这些图标的祖先链是
      `button.ant-typography-copy < span.ant-typography-actions < code < span.ant-typography`
      ——命令那几个长在 `<code>` 里，压根没有 `.cmd` 这一层，按它选一个都选不中。
-     `.cockpit` 是整页的根，(0,2,0) 也压得过 antd 自己那条 `.ant-typography-copy`。 */
+     `body` 前缀取 (0,1,1)，仍压得过 antd 自己那条 (0,1,0)。
+     原来这里写的是 `.cockpit`（整页的根），但 Modal 与 Tooltip 是 portal 到 body 的，
+     「能敲哪些命令」面板里那 66 个图标全在 `.cockpit` 之外——命中区实测退回 13×15。
+     作用域换 body 之后，面板内外同一套，实测每一颗都是 27×29。 */
   padding: 7px;
   /* antd 给的是 `margin-inline-start: 4px`，保留它，其余三边用负值抵掉内边距 */
   margin: -7px -7px -7px -3px;
 }
-.act-note { font-size: 12.5px; color: var(--dim); }
+.act-note { font-size: var(--fs-meta); color: var(--dim); }
 /* 状态按钮长在「下一步」那条里（见 JobReadout 的注释：动作要挨着解释它的那句话）。
    `.jobstep` 是 baseline 对齐的——一行文字加按钮，baseline 会把按钮吊起来，
    所以这里按钮单独回到居中。 */
@@ -561,7 +620,7 @@ body {
 }
 .status-done {
   display: inline-flex; align-items: center; gap: 8px;
-  font-size: 12.5px; color: var(--dim);
+  font-size: var(--fs-meta); color: var(--dim);
 }
 /* 撤销是**次要动作**，不给它按钮的分量——但要有下划线，让人看得出能点。
    颜色用 dim 不用 data：主色在这一页是「数据/通过」的意思，
@@ -573,13 +632,13 @@ body {
 }
 .status-undo:hover:not(:disabled) { color: var(--lit); }
 .status-undo:disabled { cursor: default; opacity: 0.5; }
-.status-err { font-size: 12.5px; color: var(--lock); }
+.status-err { font-size: var(--fs-meta); color: var(--lock); }
 /* 邮件与网申自评：默认收起的那一小块。摘要行做成一句问句，不做成按钮——
    它不是一个动作，是「你需要的话在这儿」。 */
 .chan { margin-top: 10px; }
 .chan > summary {
   cursor: pointer; list-style: none;
-  font-size: 12.5px; color: var(--faint); padding: 3px 0;
+  font-size: var(--fs-meta); color: var(--faint); padding: 3px 0;
 }
 .chan > summary::-webkit-details-marker { display: none; }
 .chan > summary::before { content: "▸ "; }
@@ -587,31 +646,31 @@ body {
 .chan > summary:hover { color: var(--dim); }
 .chan > summary:focus-visible { outline: 2px solid var(--data); outline-offset: 2px; }
 .chan-one { margin: 8px 0 14px; }
-.chan-subj { margin: 6px 0; font-size: 13px; color: var(--dim); }
+.chan-subj { margin: 6px 0; font-size: var(--fs-small); color: var(--dim); }
 /* 「用邮箱打开」是次要出口——主路径是上面那个复制按钮（没装邮件客户端时
    这个链接点了没反应）。所以它不做成按钮，只做一条链接。 */
-.chan-mail { font-size: 12.5px; margin-left: auto; }
+.chan-mail { font-size: var(--fs-meta); margin-left: auto; }
 
 .greeting {
   margin: 7px 0 0; padding: 11px 13px;
   background: var(--bay); border: 1px solid var(--edge);
-  font-size: 13.5px; line-height: 1.8; color: var(--dim); white-space: pre-wrap;
+  font-size: var(--fs-label); line-height: 1.8; color: var(--dim); white-space: pre-wrap;
 }
 
 /* ---------- 为什么是这个结论：人话两列，不上百分比 ---------- */
 .reasons { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
 .reason-col { border: 1px solid var(--edge); background: var(--panel); padding: 13px 15px; }
-.reason-col h4 { margin: 0 0 10px; font-size: 13.5px; font-weight: 600; color: var(--lit); }
+.reason-col h4 { margin: 0 0 10px; font-size: var(--fs-label); font-weight: 600; color: var(--lit); }
 .reason-col ul {
   margin: 0; padding: 0; list-style: none; display: grid; gap: 8px;
-  font-size: 13.5px; color: var(--dim);
+  font-size: var(--fs-label); color: var(--dim);
 }
 .reason-col li { padding-left: 16px; position: relative; line-height: 1.65; }
 .reason-col li::before { position: absolute; left: 0; font-weight: 700; }
 .reason-plus li::before { content: "+"; color: var(--data); }
 .reason-minus li::before { content: "−"; color: var(--caution); }
 .reason-col li b { color: var(--lit); font-weight: 600; }
-.reason-empty { margin: 0; font-size: 13px; color: var(--faint); }
+.reason-empty { margin: 0; font-size: var(--fs-small); color: var(--faint); }
 
 /* ---------- 两栏：缺口 / 信息质量 ---------- */
 .two-col { display: grid; grid-template-columns: 1.1fr 1fr; gap: 14px; margin-top: 22px; }
@@ -620,8 +679,8 @@ body {
 .two-col[data-single="true"] { grid-template-columns: 1fr; }
 .slab { border: 1px solid var(--edge); background: var(--panel-raised); padding: 15px 17px; }
 .slab-head { display: flex; align-items: center; gap: 10px; margin-bottom: 13px; }
-.slab-head h3 { font-size: 14.5px; font-weight: 600; margin: 0; }
-.gap-item { display: grid; grid-template-columns: auto 1fr; gap: 11px; font-size: 13.5px; color: var(--dim); }
+.slab-head h3 { font-size: var(--fs-content); font-weight: 600; margin: 0; }
+.gap-item { display: grid; grid-template-columns: auto 1fr; gap: 11px; font-size: var(--fs-label); color: var(--dim); }
 .gap-item + .gap-item { margin-top: 13px; }
 /* 只是分类标签，中性色。红色在本页专门留给「不能写成…」的越界表述。
    同样不用 mono——「核心职责」是中文。 */
@@ -634,14 +693,14 @@ body {
 /* 越界表述划红——这是「诚实底线」在视觉上的落点 */
 .gap-item s { color: var(--faint); text-decoration-color: var(--lock); text-decoration-thickness: 1.5px; }
 
-.quality-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; font-size: 13.5px; color: var(--dim); }
+.quality-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; font-size: var(--fs-label); color: var(--dim); }
 .quality-list li { padding-left: 15px; position: relative; }
 .quality-list li::before {
   content: ""; position: absolute; left: 0; top: 0.68em; width: 6px; height: 6px;
   border: 1.5px solid var(--caution); transform: rotate(45deg);
 }
 .quality-list strong { color: var(--lit); font-weight: 600; }
-.quality-foot { margin: 13px 0 0; font-size: 12.5px; color: var(--faint); }
+.quality-foot { margin: 13px 0 0; font-size: var(--fs-meta); color: var(--faint); }
 
 /* ---------- 环境 / 搁置（antd Collapse 覆盖） ---------- */
 /* 折叠块之间、以及它和下一段之间的间距**在这里给，不要写内联 style**。
@@ -677,16 +736,16 @@ body {
 /* 会静默失败的依赖：单独一条，不混进下面的格子里。用 caution 不用 lock——
    它不是「坏了」，是「会悄悄坏」，而红色在这一页表示不合格。 */
 .env-silent {
-  margin: 0 0 12px; padding: 9px 12px; font-size: 13px; line-height: 1.6;
+  margin: 0 0 12px; padding: 9px 12px; font-size: var(--fs-small); line-height: 1.6;
   color: var(--lit);
   border-left: 3px solid var(--caution);
   background: color-mix(in srgb, var(--caution) 9%, transparent);
 }
-.env-fix { display: block; margin-top: 3px; font-size: 12.5px; color: var(--dim); }
+.env-fix { display: block; margin-top: 3px; font-size: var(--fs-meta); color: var(--dim); }
 /* 格子里的装法：比 unlocks 再弱一档，它是「怎么办」不是「有什么用」。 */
-.env-item .env-fix { margin-top: 5px; font-size: 12px; color: var(--faint); }
+.env-item .env-fix { margin-top: 5px; font-size: var(--fs-micro); color: var(--faint); }
 .env-cli { display: flex; align-items: center; gap: 8px;
-  margin: 12px 0 0; font-size: 12.5px; color: var(--faint); }
+  margin: 12px 0 0; font-size: var(--fs-meta); color: var(--faint); }
 
 .env-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(216px, 1fr));
@@ -698,22 +757,22 @@ body {
 .env-item[data-ok="false"] .env-led { box-shadow: inset 0 0 0 1.5px var(--faint); }
 /* 不作判定的项：虚线圈，既不是绿灯也不是缺失 */
 .env-item[data-ok="na"] .env-led { border: 1px dashed var(--edge-strong); }
-.env-name { font-size: 13.5px; font-weight: 600; }
+.env-name { font-size: var(--fs-label); font-weight: 600; }
 .env-detail {
-  font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums;
+  font-size: var(--fs-micro); color: var(--faint); font-variant-numeric: tabular-nums;
 }
-.env-unlock { font-size: 12.5px; color: var(--dim); }
+.env-unlock { font-size: var(--fs-meta); color: var(--dim); }
 
 .shelf-row {
   display: grid; grid-template-columns: auto 1fr auto; gap: 13px; align-items: center;
-  border: 1px solid var(--edge); padding: 10px 14px; font-size: 13.5px;
+  border: 1px solid var(--edge); padding: 10px 14px; font-size: var(--fs-label);
 }
 .shelf-row + .shelf-row { margin-top: 7px; }
 /* 你自己排除的：左边一道实线，与「被条件挡下的」区分开 */
 .shelf-row[data-mine="true"] { border-left: 2px solid var(--edge-strong); }
 .shelf-restore {
   background: none; border: 1px solid var(--edge-strong); color: var(--dim);
-  font: inherit; font-size: 12px; padding: 2px 10px; cursor: pointer;
+  font: inherit; font-size: var(--fs-micro); padding: 2px 10px; cursor: pointer;
   white-space: nowrap;
 }
 .shelf-restore:hover { border-color: var(--data); color: var(--data); }
@@ -734,7 +793,7 @@ body {
    而那一个字决定「投了没回音」该怪谁 —— 已查看还是没回才轮到审简历，
    大多未查看时改简历没用。判据见 `job-outcome.md` Step 2b。 */
 .act-viewed { gap: 6px; margin-left: 4px; }
-.act-viewed-q { font-size: 12px; color: var(--faint); }
+.act-viewed-q { font-size: var(--fs-micro); color: var(--faint); }
 .act-sep {
   width: 1px; height: 16px; background: var(--edge-strong);
   margin-right: 2px; flex-shrink: 0;
@@ -752,10 +811,10 @@ body {
 /* 搁置区里已下线的行：整行压暗一档——它不是「待你决定」，是已经没了 */
 .shelf-row[data-gone="true"] { opacity: 0.72; }
 .shelf-row[data-gone="true"] .shelf-why { color: var(--caution); }
-.shelf-why { font-size: 12.5px; color: var(--faint); }
+.shelf-why { font-size: var(--fs-meta); color: var(--faint); }
 /* 没列出来的那一大批交代一句。它不是提示也不是警告，只是这份名单的结尾。 */
 .shelf-more {
-  margin: 12px 0 0; padding: 10px 13px; font-size: 12.5px; line-height: 1.75;
+  margin: 12px 0 0; padding: 10px 13px; font-size: var(--fs-meta); line-height: 1.75;
   color: var(--faint); border-top: 1px solid var(--edge);
 }
 .shelf-more b { color: var(--dim); font-weight: 600; }
@@ -771,7 +830,7 @@ body {
   font-family: var(--mono); font-size: 22px; font-weight: 700;
   color: var(--caution); font-variant-numeric: tabular-nums;
 }
-.pending-text { font-size: 13.5px; color: var(--dim); flex: 1; min-width: 260px; }
+.pending-text { font-size: var(--fs-label); color: var(--dim); flex: 1; min-width: 260px; }
 .pending-text b { color: var(--lit); font-weight: 600; }
 /* 写失败：同一个条，换成实线告警边——虚线在这里读作「待办」，
    而这条不是待办，是**刚才那个动作没成功**。 */
@@ -782,16 +841,16 @@ body {
 /* ---- 市场怎么读你的简历 ---------------------------------------------- */
 .rread { display: grid; gap: 22px; }
 .rread-sec { display: grid; gap: 9px; }
-.rread-lead { margin: 0; font-size: 13.5px; line-height: 1.75; color: var(--dim); }
+.rread-lead { margin: 0; font-size: var(--fs-label); line-height: 1.75; color: var(--dim); }
 .rread-lead b { color: var(--lit); font-weight: 600; }
-.rread-note { margin: 0; font-size: 12.5px; line-height: 1.7; color: var(--faint); }
+.rread-note { margin: 0; font-size: var(--fs-meta); line-height: 1.7; color: var(--faint); }
 .rread-note b { color: var(--dim); font-weight: 600; }
 
 /* 「还能投的 N 个」——库存那一行。比上面的中位数那句重一档（它带一条要执行的
    命令），但还没重到抢走段头。`data-thin` 在库存掉到一半以下时才点亮左边那道杠。 */
 .rread-open {
   margin: 6px 0 0;
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
   line-height: 1.8;
   color: var(--dim);
   padding-left: 9px;
@@ -807,16 +866,16 @@ body {
   color: var(--data);
   background: color-mix(in srgb, var(--data) 10%, transparent);
   padding: 1px 5px;
-  border-radius: 3px;
+  border-radius: 2px;
 }
 .rread-q {
-  margin-left: 8px; font-size: 12.5px; letter-spacing: 0; color: var(--faint);
+  margin-left: 8px; font-size: var(--fs-meta); letter-spacing: 0; color: var(--faint);
   border-bottom: 1px dotted var(--edge-strong); cursor: help;
 }
 /* 行业分布：数字用等宽（纯数字才配等宽——中文加字距会被拉成散字） */
 .rread-inds { display: flex; flex-wrap: wrap; gap: 8px; }
 .rread-ind {
-  padding: 3px 9px; font-size: 12.5px; color: var(--dim);
+  padding: 3px 9px; font-size: var(--fs-meta); color: var(--dim);
   background: var(--panel-raised); border: 1px solid var(--edge);
 }
 .rread-ind em {
@@ -832,21 +891,21 @@ body {
 .rread-block[data-tone="fixed"]  { border-left-color: var(--lock); }
 .rread-block[data-tone="ask"]    { border-left-color: var(--caution); }
 .rread-block[data-tone="choose"] { border-left-color: var(--data); }
-.rread-bn { flex-shrink: 0; font-size: 13px; color: var(--lit); font-weight: 600; }
+.rread-bn { flex-shrink: 0; font-size: var(--fs-small); color: var(--lit); font-weight: 600; }
 .rread-bn em {
   margin-left: 6px; font-style: normal; font-family: var(--mono);
-  font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums;
+  font-size: var(--fs-micro); color: var(--faint); font-variant-numeric: tabular-nums;
 }
-.rread-bnote { font-size: 12.5px; line-height: 1.7; color: var(--dim); flex: 1; min-width: 240px; }
+.rread-bnote { font-size: var(--fs-meta); line-height: 1.7; color: var(--dim); flex: 1; min-width: 240px; }
 .rread-bnote b { color: var(--lit); font-weight: 600; }
 /* 简历待补：用 caution 而不是 lock——这是「你会但没写」，不是「你不会」 */
 .rread-gaps { display: flex; flex-wrap: wrap; gap: 8px; }
 .rread-gap {
-  padding: 4px 10px; font-size: 12.5px; color: var(--lit);
+  padding: 4px 10px; font-size: var(--fs-meta); color: var(--lit);
   background: var(--panel-raised); border: 1px dashed var(--caution);
 }
 .rread-gap em {
-  margin-left: 7px; font-style: normal; font-size: 12.5px; color: var(--faint);
+  margin-left: 7px; font-style: normal; font-size: var(--fs-meta); color: var(--faint);
 }
 
 /* 同岗多投放标记：信息不是警告，用数据色的弱化边框 */
@@ -856,7 +915,7 @@ body {
    二级信息压过主体。改成无边框的次级文字，长度也一并收短，完整说明留在 tooltip。 */
 .dup-chip {
   display: inline-block; margin-left: 6px;
-  font-size: 12.5px; line-height: 16px;
+  font-size: var(--fs-meta); line-height: 16px;
   color: var(--faint);
   font-variant-numeric: tabular-nums;
 }
@@ -864,7 +923,7 @@ body {
 .pending-bar[data-tone="error"] .pending-text { color: var(--lit); }
 
 .cockpit-foot {
-  margin-top: 26px; font-size: 12px;
+  margin-top: 26px; font-size: var(--fs-micro);
   /* 中文不加大字距（AGENTS.md 排版规则）——0.1em 会把整句页脚拉成散字；
      自家中文上限是 .kicker 的 0.04em */
   letter-spacing: 0.02em; color: var(--faint);
@@ -926,9 +985,9 @@ body {
   /* 招聘网站那一块塌成两列：名字 + 数字一行，其余各占一行。
      硬压五列会把「最近 08-19 · 新增 150」挤成一字一行。
      **不为它单开 700px**——与这一档只差 20px，多一个断点就多一处要同步的地方。 */
-  .cockpit .portal-row { grid-template-columns: 8.5em 1fr; }
-  .cockpit .portal-how, .cockpit .portal-warn, .cockpit .portal-jd,
-  .cockpit .portal-last, .cockpit .portal-refresh { grid-column: 1 / -1; }
+  body .portal-row { grid-template-columns: 8.5em 1fr; }
+  body .portal-how, body .portal-warn, body .portal-jd,
+  body .portal-last, body .portal-refresh { grid-column: 1 / -1; }
   /* **这三条都要多挂一层 `.cockpit`，否则一条都不生效。**
      它们要盖的基础规则（`.cmdbook-row { grid-template-columns: 12em 1fr }`、
      `.cmdbook-ex { grid-column: 2 }`、`.cmdbook-bare { grid-column: 2 }`）都在
@@ -939,12 +998,12 @@ body {
      （「命令表在更窄处才需要堆叠」）读起来像是已经在管事了。
      同一个陷阱这份文件里现在有三处，判据统一成：**要盖本文件下方的规则，
      就得比它多一层，不能只靠「我在媒体查询里」。** */
-  .cockpit .cmdbook-row { grid-template-columns: 1fr; }
+  body .cmdbook-row { grid-template-columns: 1fr; }
   /* 堆叠后只剩一列，`grid-column: 2` 指向不存在的列——浏览器会隐式再开一条，
      举例和「不给参数时」整块被挤到屏幕外。跟着回到第 1 列。 */
-  .cockpit .cmdbook-ex,
-  .cockpit .cmdbook-bare { grid-column: 1; }
-  .cockpit .cmdbook-does { color: var(--faint); }
+  body .cmdbook-ex,
+  body .cmdbook-bare { grid-column: 1; }
+  body .cmdbook-does { color: var(--faint); }
   .cockpit .se-step { grid-template-columns: 1fr; }
 }
 
@@ -997,7 +1056,7 @@ body {
   .job-nums i { font-size: 11.5px; font-style: normal; }
   /* 标签跟着正文走，只有数值进等宽——等宽套在汉字上会被拉成散字。
      等宽也不加字距：加了就成了「4 8 - 8 4」（两条都在 AGENTS.md 里）。 */
-  .job-nums .jn-k { font-size: 12px; color: var(--dim); }
+  .job-nums .jn-k { font-size: var(--fs-micro); color: var(--dim); }
   .job-nums .jn-k b { font-family: var(--mono); font-weight: 400; margin: 0 2px 0 3px; }
   /* 命令块的 `code` 定死了 nowrap，`/job-scrape --no-rank`（只抓不评）在 358px 里
      断不开——实测整块顶到 468px。放开换行，用 `keep-all` 挡住汉字内部的断点：
@@ -1062,21 +1121,21 @@ body {
 }
 .jobstep-tag {
   flex-shrink: 0;
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.04em;
   color: var(--data);
 }
-.jobstep-text { font-size: 13px; }
+.jobstep-text { font-size: var(--fs-small); }
 
 /* ── 面试练习回看 ── */
 .ilog-collapse .ant-collapse-content-box { padding-block: 4px 10px; }
-.ilog-head { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
-.ilog-stage, .ilog-date, .ilog-n { font-size: 12.5px; color: var(--faint); }
+.ilog-head { display: flex; align-items: baseline; gap: 10px; font-size: var(--fs-small); }
+.ilog-stage, .ilog-date, .ilog-n { font-size: var(--fs-meta); color: var(--faint); }
 /* 等宽只给纯数字——中文套等宽会被拉成散字（AGENTS.md 排版规则） */
 .ilog-date, .ilog-n { font-variant-numeric: tabular-nums; }
-.ilog-scene { margin: 0 0 8px; font-size: 12.5px; color: var(--faint); }
+.ilog-scene { margin: 0 0 8px; font-size: var(--fs-meta); color: var(--faint); }
 .ilog-qa { margin-bottom: 14px; }
-.ilog-q { margin: 0 0 5px; font-size: 13px; font-weight: 600; display: flex; gap: 7px; }
+.ilog-q { margin: 0 0 5px; font-size: var(--fs-small); font-weight: 600; display: flex; gap: 7px; }
 .ilog-num {
   flex-shrink: 0;
   min-width: 17px;
@@ -1085,7 +1144,7 @@ body {
 }
 .ilog-a {
   margin: 0 0 5px 24px;
-  font-size: 13px;
+  font-size: var(--fs-small);
   line-height: 1.65;
   white-space: pre-wrap;
 }
@@ -1094,7 +1153,7 @@ body {
   margin: 0 0 0 24px;
   padding-left: 9px;
   border-left: 2px solid color-mix(in srgb, var(--caution) 55%, transparent);
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
   line-height: 1.6;
   color: var(--faint);
   /* 反馈是**多行正文**，和上面的答案、和 .greeting 归同一条规矩：
@@ -1108,7 +1167,7 @@ body {
      换行里 3 个是折行，句子被从中间劈开。见 unwrap_soft_wraps 的 docstring。 */
   white-space: pre-wrap;
 }
-.ilog-foot { margin-top: 10px; font-size: 12px; color: var(--faint); }
+.ilog-foot { margin-top: 10px; font-size: var(--fs-micro); color: var(--faint); }
 
 
 /* ── 流水线那几格现在是真筛选 ── */
@@ -1160,7 +1219,7 @@ body {
      - 中文小标签的下限是 12.5px（tokens.ts「低于 13 的中文在深底上读不清」）。
      两条都是这个项目自己写下的标准，而这一处两条都没过。 */
   min-height: 24px;
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
   cursor: pointer;
 }
 .funnel-chip:hover { background: color-mix(in srgb, var(--data) 18%, transparent); }
@@ -1180,7 +1239,7 @@ body {
   background: color-mix(in srgb, var(--caution) 8%, transparent);
 }
 .mat-gap > b { color: var(--caution); }
-.mat-gap > span { flex: 1 1 22em; color: var(--dim); font-size: 13px; }
+.mat-gap > span { flex: 1 1 22em; color: var(--dim); font-size: var(--fs-small); }
 /* 「你手上已经有 N 个备好的」——和上面那条缺口是**反向**的消息，
    所以不跟着用告警色，独占一整行（`flex-basis:100%`）不跟命令挤在一排。
    这一条报的是存货不是缺口，颜色走中性正文色，只有那个数加重。 */
@@ -1205,8 +1264,10 @@ body {
   color: var(--data);
   background: none;
   border: 1px solid color-mix(in srgb, var(--data) 45%, transparent);
-  border-radius: 3px;
-  padding: 0 6px;
+  border-radius: 2px;
+  /* 实测 23 高。竖向各加 1px 再把盒子顶回去 1px：命中区到 25，横向与格子高度都不动。 */
+  padding: 1px 6px;
+  margin: -1px 0;
   cursor: pointer;
 }
 .have-jump:hover { border-color: var(--data); }
@@ -1229,7 +1290,7 @@ body {
   align-items: baseline;
   padding: 5px 0;
   border-top: 1px solid color-mix(in srgb, var(--edge) 70%, transparent);
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
 }
 .blocked-list li > b { color: var(--lit); }
 .blocked-list li > i { color: var(--faint); font-style: normal; }
@@ -1258,7 +1319,7 @@ body {
 }
 .userpop-h {
   margin: 0 0 6px;
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.05em;
   color: var(--faint);
 }
@@ -1270,7 +1331,7 @@ body {
   justify-content: space-between;
   gap: 10px;
   padding: 4px 0;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 .userpop-list li[data-active="true"] { color: var(--data); font-weight: 600; }
 .userpop-list em {
@@ -1281,7 +1342,7 @@ body {
 .userpop-empty { color: var(--faint); }
 .userpop-note {
   margin: 10px 0 0;
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
   line-height: 1.6;
   color: var(--faint);
 }
@@ -1294,7 +1355,7 @@ body {
   gap: 10px;
   flex-wrap: wrap;
   padding: 6px 0;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 .bresume-row .kicker { flex-shrink: 0; min-width: 60px; }
 .bresume-secs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -1302,8 +1363,8 @@ body {
    开头（`{i > 0 && <em>→</em>}{s}`）——于是屏幕上是「个人优势 →工作经历」，
    左边有空右边没有，一串下来全是歪的。 */
 .bresume-secs em { font-style: normal; color: var(--faint); margin-right: 6px; }
-.bresume-n, .bresume-never { font-size: 12.5px; color: var(--faint); }
-.bresume-verdict { font-size: 12.5px; color: var(--data); }
+.bresume-n, .bresume-never { font-size: var(--fs-meta); color: var(--faint); }
+.bresume-verdict { font-size: var(--fs-meta); color: var(--data); }
 /* PDF 比源文件旧、或章节读不出来——按钮能点、文件能开，只是内容不是你以为的
    那份。整段横幅，必须显眼。用 --caution（提醒，不是告警）。 */
 .bresume-stale {
@@ -1314,7 +1375,7 @@ body {
   /* 不加圆角：全局是方形语言（tokens.ts「核心动作是盖章/判定，方形是它的形制语言」）。
      左边那道 2px 亮边才是这个块的标记物，右侧收方反而让它更像一枚盖下去的印。 */
   color: var(--caution);
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
   line-height: 1.7;
 }
 /* 审阅结论过期了要看得出来，但它是**行内**的一句小字（长在「上次审核」那一行里，
@@ -1322,10 +1383,10 @@ body {
    **所以不能跟上面共用类名**：那样它会顶着边框、底色和 8px 内边距，
    在一行中间炸出一个方块 —— 简历改过不是出事，只是那句结论不作数了，
    比正文轻一档就够。 */
-.bresume-audit-stale { font-size: 12px; color: var(--caution); }
+.bresume-audit-stale { font-size: var(--fs-micro); color: var(--caution); }
 .bresume-note {
   margin: 12px 0 0;
-  font-size: 12px;
+  font-size: var(--fs-micro);
   line-height: 1.7;
   color: var(--faint);
 }
@@ -1335,7 +1396,7 @@ body {
 .parked-note {
   margin: 0 0 10px;
   padding: 8px 12px;
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
   line-height: 1.7;
   color: var(--dim);
   background: var(--panel);
@@ -1346,10 +1407,37 @@ body {
 .parked-note b { color: var(--lit); font-variant-numeric: tabular-nums; }
 
 /* ---------- 全部命令（图形界面里的那份帮助） ---------- */
+
+/* 「终端工具适配」那一横排。原来这四个值是 JSX 的 inline style，
+   而两个 color 引的是 `--text-secondary` 和 `--text-tertiary` 这两个**从来没定义过**
+   的名字——整条声明无效，字色静默回落到继承值，看上去「只是没那么灰」，
+   实际是那两个层次的区分整个没了。
+   那两个名字的来历是 antd 的角色名（colorTextSecondary / Tertiary），
+   这一层的正本叫 `--dim` / `--faint`。 */
+/* 下面这些是 2026-09-30 从 JSX 的 inline style 收上来的（判据见 DESIGN.md 的 Rules：
+   inline style 只许给由数据算出来的值，静态样式一律进 class）。 */
+.sl-search { max-width: 320px; }
+.sl-filter { min-width: 168px; }
+.act-note.is-warn { color: var(--caution); }
+.kicker.is-tag { margin-left: auto; color: var(--faint);
+  border: 1px dashed var(--edge-strong); padding: 2px 7px; }
+.cockpit .panel-collapse.panel-flush { border: 0; }
+.cockpit .panel-collapse.panel-flush.is-gap { margin-top: 18px; }
+
+.cmdbook-bar {
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.cmdbar-label { font-size: var(--fs-small); color: var(--dim); }
+.cmdbar-note { font-size: var(--fs-meta); color: var(--faint); }
+
 .cmdbook-lead,
 .cmdbook-foot {
   margin: 0 0 18px;
-  font-size: 13.5px;
+  font-size: var(--fs-label);
   line-height: 1.75;
   color: var(--faint);
 }
@@ -1405,10 +1493,10 @@ body {
    `min-width: 0` 是配套的、不能省：chip 的祖先是 grid/flex 项，它们默认
    `min-width: auto`（= 不小于内容），于是 `max-width: 100%` 量的是一个已经被
    内容撑大的父盒子，等于没限制——实测加了 max-width 之后 ≤430px 照旧溢出。 */
-.cockpit .cmdbook-row .ant-typography code,
-.cockpit .rail-cell .ant-typography code,
-.cockpit .nextstep .ant-typography code,
-.cockpit .readout .ant-typography code {
+body .cmdbook-row .ant-typography code,
+body .rail-cell .ant-typography code,
+body .nextstep .ant-typography code,
+body .readout .ant-typography code {
   display: inline-block;
   max-width: 100%;
   overflow-x: auto;
@@ -1430,10 +1518,10 @@ body {
      隐藏之后 chip 从 126×42 回到 111×27。 */
   scrollbar-width: none;
 }
-.cockpit .cmdbook-row .ant-typography code::-webkit-scrollbar,
-.cockpit .rail-cell .ant-typography code::-webkit-scrollbar,
-.cockpit .nextstep .ant-typography code::-webkit-scrollbar,
-.cockpit .readout .ant-typography code::-webkit-scrollbar { display: none; }
+body .cmdbook-row .ant-typography code::-webkit-scrollbar,
+body .rail-cell .ant-typography code::-webkit-scrollbar,
+body .nextstep .ant-typography code::-webkit-scrollbar,
+body .readout .ant-typography code::-webkit-scrollbar { display: none; }
 /* 只给**命令 chip 那条链**上的盒子。第一版顺手把 `.nextstep-text` 和
    `.rail-guide` 也铺了进来——而 `.nextstep-text` 自己写着 `min-width: 220px`
    （它是 `flex: 1` 的文字，没有下限会被旁边的 chip 挤扁），当场被冲掉：
@@ -1447,7 +1535,7 @@ body {
    宽度是确定的，百分比在这里才有意义。 */
 .cmdbook-ex-i { max-width: 100%; overflow-x: auto; }
 .cmdbook-does {
-  font-size: 13.5px;
+  font-size: var(--fs-label);
   line-height: 1.6;
   color: var(--lit);
 }
@@ -1467,12 +1555,12 @@ body {
   gap: 5px;
 }
 .cmdbook-ex .ant-typography code {
-  font-size: 12px;
+  font-size: var(--fs-micro);
   opacity: 0.9;
 }
 .cmdbook-note,
 .cmdbook-say {
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
   color: var(--faint);
 }
 /* 窄屏改上下堆叠：并排会把说明挤成一列单字 */
@@ -1481,7 +1569,7 @@ body {
    销售、律师、中介、保险的大头就在浮动上，不标出来会让人直接划过去。 */
 .annual-plus {
   font-style: normal;
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
   color: var(--caution);
   margin-left: 3px;
 }
@@ -1489,14 +1577,14 @@ body {
 /* 可以投的岗位为空 —— 新用户跑完 /job-setup 后看到的第一屏。
    不是「没数据」，是「下一步在这儿」。 */
 .shortlist-empty { padding: 26px 4px 22px; text-align: left; }
-.se-lead { margin: 0 0 16px; font-size: 14px; color: var(--lit); }
+.se-lead { margin: 0 0 16px; font-size: var(--fs-content); color: var(--lit); }
 .se-steps { display: grid; gap: 9px; margin-bottom: 16px; }
 .se-step {
   display: grid; grid-template-columns: 8em 1fr; gap: 4px 14px;
   align-items: baseline;
 }
-.se-step span { font-size: 13.5px; color: var(--dim); }
-.se-foot { margin: 0; font-size: 12.5px; color: var(--faint); }
+.se-step span { font-size: var(--fs-label); color: var(--dim); }
+.se-foot { margin: 0; font-size: var(--fs-meta); color: var(--faint); }
 
 /* 日常那三条命令。和下面 18 条平铺在一起就等于没突出，所以给一层底和一道左边框。 */
 .cmdbook-spine {
@@ -1514,7 +1602,7 @@ body {
   gap: 8px;
   align-items: baseline;
   margin-top: 3px;
-  font-size: 12px;
+  font-size: var(--fs-micro);
   color: var(--dim);
 }
 .cmdbook-bare-k {
@@ -1522,14 +1610,14 @@ body {
   padding: 1px 6px;
   border: 1px solid var(--edge);
   color: var(--dim);
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
 }
 
 /* 「挂了」之后的可选原因。芯片式：点一下就写盘，没有保存按钮——
    多数拒信不说理由，不填是正常路径，不该为它加一步确认。 */
 .why-row {
   display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
-  margin-top: 8px; font-size: 12px;
+  margin-top: 8px; font-size: var(--fs-micro);
 }
 .why-k { color: var(--dim); margin-right: 2px; }
 .why-chip {
@@ -1544,25 +1632,28 @@ body {
 .ostats-top { display: flex; flex-wrap: wrap; gap: 26px; margin-bottom: 16px; }
 .ostats-big { display: flex; flex-direction: column; gap: 2px; }
 .ostats-big b { font-size: 25px; color: var(--data); line-height: 1.1; }
-.ostats-big span { font-size: 12px; color: var(--dim); }
+.ostats-big span { font-size: var(--fs-micro); color: var(--dim); }
 .ostats-bar { display: flex; gap: 2px; height: 34px; margin-bottom: 8px; }
 .ostats-bar span {
   display: flex; flex-direction: column; justify-content: center;
   min-width: 60px; padding: 0 8px;
   background: color-mix(in srgb, var(--dim) 16%, transparent);
 }
-.ostats-bar i { font-style: normal; font-size: 11px; color: var(--dim); }
-.ostats-bar b { font-size: 13px; color: var(--lit); }
+/* 图例是中文，11px 撞在自家 12.0 的地板上（`test_cjk_never_goes_below_the_floor`
+   只扫 cockpit.css 与 JSX 里的字面量，这一处的文字从数据来，静态扫看不见——
+   2026-09-30 拿浏览器逐节点量，全页上屏中文小于 12px 的就这一处）。 */
+.ostats-bar i { font-style: normal; font-size: var(--fs-meta); color: var(--dim); }
+.ostats-bar b { font-size: var(--fs-small); color: var(--lit); }
 .ostats-bar .ob-约面或更远 { background: color-mix(in srgb, var(--data) 26%, transparent); }
 .ostats-bar .ob-被拒 { background: color-mix(in srgb, var(--caution) 20%, transparent); }
-.ostats-note { font-size: 12px; color: var(--dim); margin: 6px 0 0; line-height: 1.7; }
+.ostats-note { font-size: var(--fs-micro); color: var(--dim); margin: 6px 0 0; line-height: 1.7; }
 .ostats-band { margin-top: 18px; }
 .ostats-band table { width: 100%; border-collapse: collapse; margin-top: 6px; }
 .ostats-band th {
-  text-align: left; font-weight: 400; font-size: 12px;
+  text-align: left; font-weight: 400; font-size: var(--fs-micro);
   color: var(--lit); padding: 4px 10px 4px 0; white-space: nowrap;
 }
-.ostats-band td { padding: 4px 10px 4px 0; font-size: 12px; color: var(--dim); }
+.ostats-band td { padding: 4px 10px 4px 0; font-size: var(--fs-micro); color: var(--dim); }
 /* **只有横条那一栏该吃掉多余的宽度，其余三栏各自贴着自己的内容。**
    原来只给横条定了 55%，剩下 45% 被三栏均分：「投了几个」那个数落在一片空白的
    最左边，离左边的档位标签 300px、离右边的横条也 300px，读的时候跟谁都对不上。
@@ -1584,7 +1675,7 @@ body {
    .deep-chip / .mat-chip / .co-chip / .sent-chip 全是方的。 */
 .ostats-reasons span {
   display: inline-flex; gap: 6px; align-items: baseline;
-  padding: 2px 9px; font-size: 12px;
+  padding: 2px 9px; font-size: var(--fs-micro);
   border: 1px solid var(--edge); color: var(--lit);
 }
 .ostats-reasons b { color: var(--data); }
@@ -1594,7 +1685,7 @@ body {
 .hide-toggle {
   display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
   background: none; border: 1px solid var(--edge);
-  color: var(--dim); font: inherit; font-size: 12.5px; padding: 2px 9px;
+  color: var(--dim); font: inherit; font-size: var(--fs-meta); padding: 2px 9px;
 }
 .hide-toggle:hover { border-color: var(--data); color: var(--data); }
 .hide-toggle b { color: var(--caution); }
@@ -1611,11 +1702,11 @@ body {
 }
 .hide-line {
   display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
-  margin-bottom: 8px; font-size: 13px;
+  margin-bottom: 8px; font-size: var(--fs-small);
 }
-.hide-k { color: var(--dim); font-size: 12.5px; flex: none; }
+.hide-k { color: var(--dim); font-size: var(--fs-meta); flex: none; }
 .hide-in {
-  flex: 1; min-width: 140px; padding: 3px 8px; font: inherit; font-size: 12.5px;
+  flex: 1; min-width: 140px; padding: 3px 8px; font: inherit; font-size: var(--fs-meta);
   background: var(--bay); color: var(--lit);
   border: 1px solid var(--edge);
 }
@@ -1623,17 +1714,17 @@ body {
 .hide-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
 .hide-chips button {
   padding: 2px 9px; cursor: pointer; font: inherit;
-  font-size: 12px; background: transparent; color: var(--dim);
+  font-size: var(--fs-micro); background: transparent; color: var(--dim);
   border: 1px solid var(--edge);
 }
 .hide-chips button:hover { border-color: var(--lock); color: var(--lock); }
 .hide-chips button[data-on] {
-  border-color: var(--data-deep); background: rgba(60,203,191,.12); color: var(--data);
+  border-color: var(--data-deep); background: color-mix(in srgb, var(--data) 12%, transparent); color: var(--data);
 }
-.hide-note { font-size: 12px; color: var(--faint); line-height: 1.7; margin: 0 0 10px; }
+.hide-note { font-size: var(--fs-micro); color: var(--faint); line-height: 1.7; margin: 0 0 10px; }
 .hide-clear {
   background: none; border: 1px solid var(--edge);
-  color: var(--dim); font: inherit; font-size: 12.5px; padding: 3px 11px; cursor: pointer;
+  color: var(--dim); font: inherit; font-size: var(--fs-meta); padding: 3px 11px; cursor: pointer;
 }
 .hide-clear:hover { border-color: var(--lock); color: var(--lock); }
 .hide-n { display: inline-flex; gap: 4px; align-items: baseline; color: var(--caution); }
@@ -1643,7 +1734,7 @@ body {
    所以走描边不走实底——实底在这一页只留给「已投」那种确定发生过的事。 */
 .co-chip {
   display: inline-block; padding: 1px 6px; border-radius: 2px;
-  font-size: 12.5px; line-height: 1.6; white-space: nowrap;
+  font-size: var(--fs-meta); line-height: 1.6; white-space: nowrap;
   border: 1px solid var(--caution); color: var(--caution);
 }
 
@@ -1686,12 +1777,14 @@ body {
   align-items: baseline;
   padding: 7px 0;
   border-top: 1px solid var(--edge);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 .portal-row:first-child { border-top: 0; }
 /* 关掉的那几行整行压暗——但**不隐藏**：用户要看得见自己关了什么 */
 .portal-row.is-off { opacity: 0.5; }
-.portal-sw { display: inline-flex; align-items: baseline; gap: 7px; cursor: pointer; }
+/* 整行的开关：label 实测 22 高，撑到 24（负边距抵掉，行高不动）。 */
+.portal-sw { display: inline-flex; align-items: baseline; gap: 7px; cursor: pointer;
+  padding: 1px 0; margin: -1px 0; }
 .portal-sw input { cursor: pointer; }
 .portal-sw b { color: var(--lit); font-weight: 600; }
 .portal-how { color: var(--dim); }
@@ -1701,7 +1794,7 @@ body {
 .portal-n i { font-style: normal; color: var(--dim); margin-left: 5px; }
 /* 「读不到职位详情」是这一块最要紧的一条信息——它解释「抓了一堆却一个可投的都没有」 */
 .portal-warn {
-  padding: 1px 6px; border-radius: 2px; font-size: 12.5px; white-space: nowrap;
+  padding: 1px 6px; border-radius: 2px; font-size: var(--fs-meta); white-space: nowrap;
   border: 1px solid var(--caution); color: var(--caution);
 }
 
@@ -1710,7 +1803,9 @@ body {
    四态四种颜色：没记过（淡）· 今天（正常）· 两周内（正常）· 超两周（琥珀）。
    超两周才变色 —— 标记要标少数派，天天变色就没人看了。 */
 .portal-refresh {
-  padding: 1px 4px; font-size: 12.5px; white-space: nowrap; cursor: pointer;
+  /* 实测 21 高：虚线下方那点留白本来就有，改成 3px 上下、负边距抵掉，行不动。 */
+  padding: 3px 6px; margin: -2px -2px;
+  font-size: var(--fs-meta); white-space: nowrap; cursor: pointer;
   background: transparent; border: 0;
   border-bottom: 1px dashed var(--edge-strong); color: var(--dim);
   font-family: inherit;
@@ -1726,7 +1821,7 @@ body {
    字号不许低于 12px —— 里面是「（需手机 APP）」一串中文，11px 在深底上读不清
    （test_cjk_never_goes_below_the_floor 钉着）；层级靠 --faint 颜色区分，不靠缩字号。 */
 .portal-app-badge {
-  font-size: 12px;
+  font-size: var(--fs-micro);
   color: var(--faint);
   margin-left: 4px;
 }
@@ -1738,13 +1833,13 @@ body {
 .portal-app-tip {
   margin: 0 0 10px;
   padding: 8px 12px;
-  border-radius: 3px;
+  border-radius: 2px;
   border: 1px solid var(--edge);
-  background: var(--panel-raised, rgba(255, 255, 255, 0.03));
+  background: var(--panel-raised);
   display: flex;
   gap: 8px;
   align-items: baseline;
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
   line-height: 1.6;
   color: var(--dim);
 }
@@ -1753,23 +1848,23 @@ body {
   font-weight: 600;
 }
 .portal-app-icon {
-  font-size: 13px;
+  font-size: var(--fs-small);
   flex-shrink: 0;
 }
 
 /* 撞了平台风控的告警条。**放在列表之上**，不是行内小字：
    这件事多数只有用户本人能解（去过一条短信），而他看到的现象只是「没新岗了」。 */
 .portal-alarm {
-  margin: 0 0 10px; padding: 10px 12px; border-radius: 3px;
+  margin: 0 0 10px; padding: 10px 12px; border-radius: 2px;
   border: 1px solid var(--lock); background: color-mix(in srgb, var(--lock) 8%, transparent);
 }
-.portal-alarm > b { color: var(--lock); font-size: 13px; }
+.portal-alarm > b { color: var(--lock); font-size: var(--fs-small); }
 .portal-alarm ul { margin: 6px 0 6px; padding-left: 1.2em; }
-.portal-alarm li { font-size: 12.5px; line-height: 1.7; }
+.portal-alarm li { font-size: var(--fs-meta); line-height: 1.7; }
 .portal-alarm li i { color: var(--faint); font-style: normal; }
 /* 「去处理」——告警条的落点。只说「要验证」不给入口，等于把最后一步扔回给用户 */
 .portal-alarm .portal-fix {
-  margin-left: 8px; padding: 1px 8px; border-radius: 2px; font-size: 12px;
+  margin-left: 8px; padding: 1px 8px; border-radius: 2px; font-size: var(--fs-micro);
   border: 1px solid var(--lock); color: var(--lock); text-decoration: none;
   white-space: nowrap;
 }
@@ -1778,10 +1873,10 @@ body {
 /* 「另有 N 个被你关掉了」——格子数被 prefs 压低时的说明。
    不说的话岗位看起来是凭空少的。 */
 .rail-filtered {
-  margin: 2px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--faint);
+  margin: 2px 0 0; font-size: var(--fs-meta); line-height: 1.5; color: var(--faint);
 }
 .portal-unblock {
-  padding: 4px 12px; border-radius: 2px; font-size: 12.5px; cursor: pointer;
+  padding: 4px 12px; border-radius: 2px; font-size: var(--fs-meta); cursor: pointer;
   border: 1px solid var(--edge-strong); background: var(--panel-raised); color: var(--lit);
 }
 .portal-unblock:hover:not(:disabled) { border-color: var(--data); color: var(--data); }
@@ -1789,24 +1884,24 @@ body {
 /* 勾着但被封 = 不抓。这条要挨着勾选框写，否则用户看到勾是开的会以为它在抓 */
 .portal-halt {
   margin-left: 6px; padding: 0 5px; border-radius: 2px; font-style: normal;
-  font-size: 12.5px; border: 1px solid var(--lock); color: var(--lock);
+  font-size: var(--fs-meta); border: 1px solid var(--lock); color: var(--lock);
 }
 /* 这里原来还有一条 `.portal-halt.is-waiting`：给 CLI 限流那种封控退到灰的一档，
    理由是「用户既做不了也不用做，到点自动恢复」。**2026-08-26 裁定封控不再自动
    到期之后那个理由就没了** —— 它要用户换网络出口，和「去过验证」一样是待办，
    不该长得比另一种轻。样式跟着 `Portals.tsx` 那处一起撤掉了。 */
-.portal-alarm p { margin: 0; font-size: 12.5px; line-height: 1.7; color: var(--dim); }
+.portal-alarm p { margin: 0; font-size: var(--fs-meta); line-height: 1.7; color: var(--dim); }
 /* 被连带停掉的那条通道：比正文轻，但必须看得见 —— 用户会照「分开处理」
    去开另一条，正好撞上升级成账号风控那条路。 */
 .portal-also { display: block; margin-top: 3px; font-style: normal;
-  font-size: 12.5px; color: var(--caution); }
+  font-size: var(--fs-meta); color: var(--caution); }
 /* 「这条不是第一次撞了」：比连带那条更该被看见 —— 它说的是「这个出口不会好了」 */
 .portal-streak { display: block; margin-top: 3px; font-style: normal;
-  font-size: 12.5px; font-weight: 600; color: var(--danger, var(--caution)); }
+  font-size: var(--fs-meta); font-weight: 600; color: var(--danger, var(--caution)); }
 /* 命令前那句引导，和命令块之间不留空档 */
 .portal-probe { margin-bottom: 4px !important; }
 .portal-alarm code {
-  padding: 1px 5px; border-radius: 2px; font-size: 12px;
+  padding: 1px 5px; border-radius: 2px; font-size: var(--fs-micro);
   background: var(--panel-raised); color: var(--lit);
 }
 /* 被拦住的那一行本身也要看得出来，否则告警条和列表对不上号 */
@@ -1814,21 +1909,21 @@ body {
 /* 「职位描述存了 N%」。平时是灰的一行数，低于两成才变成警示色——
    常态不该有颜色，否则四家全是黄的，警示就不再是警示。 */
 .portal-jd {
-  font-size: 12.5px; white-space: nowrap; color: var(--faint);
+  font-size: var(--fs-meta); white-space: nowrap; color: var(--faint);
 }
 .portal-jd.is-thin { color: var(--caution); }
-.portal-last { color: var(--faint); font-size: 12.5px; white-space: nowrap; }
+.portal-last { color: var(--faint); font-size: var(--fs-meta); white-space: nowrap; }
 /* 备注单独一行铺满，别挤进上面那几列——它是句子不是字段 */
 .portal-note {
   grid-column: 1 / -1;
-  color: var(--faint); font-size: 12px; line-height: 1.6;
+  color: var(--faint); font-size: var(--fs-micro); line-height: 1.6;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.portal-foot { margin: 12px 0 0; font-size: 12.5px; color: var(--faint); line-height: 1.7; }
+.portal-foot { margin: 12px 0 0; font-size: var(--fs-meta); color: var(--faint); line-height: 1.7; }
 .portal-err { color: var(--caution); }
 
 /* 「这几类岗要不要看」——复用渠道那一块的行布局，只是列少两个 */
-.jobprefs-lead { margin: 0 0 12px; font-size: 13px; line-height: 1.75; color: var(--faint); }
+.jobprefs-lead { margin: 0 0 12px; font-size: var(--fs-small); line-height: 1.75; color: var(--faint); }
 .jobprefs-lead b { color: var(--lit); }
 .jobpref-row { grid-template-columns: 18em 6em 1fr; }
 .jobpref-row .portal-note { white-space: normal; overflow: visible; }
@@ -1840,7 +1935,7 @@ body {
 }
 /* 「搜到 N 个 / 共 M 个」——**搜不到时也要说话**。一个空表加一个空搜索框，
    用户分不清是「没有这样的岗」还是「筛选器还开着」，这一页最常见的失败模式。 */
-.sl-search-n { font-size: 12.5px; color: var(--faint); }
+.sl-search-n { font-size: var(--fs-meta); color: var(--faint); }
 .sl-search-n b { color: var(--lit); font-family: var(--mono); font-weight: 400; }
 
 /* 短名单表头的第二行提示：猎头压满这一档时指向具名直招的那批。
@@ -1859,7 +1954,7 @@ body {
      不设的话继承 15px —— 一段导语比它下面那一千多行还大一号。 */
   color: var(--dim);
   margin: 0 0 10px;
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
   line-height: 1.7;
 }
 .cockpit .shelf-tally-note {
@@ -1890,48 +1985,48 @@ body {
    不套边框 —— 它此刻是正文，不是一个「可以点开的东西」。 */
 .firstrun { margin: 0 0 24px; }
 .firstrun-h {
-  margin: 0 0 10px; color: var(--lit); font-size: 15px; font-weight: 600;
+  margin: 0 0 10px; color: var(--lit); font-size: var(--fs-body); font-weight: 600;
 }
 
 /* ── HR 常问的那几句 ────────────────────────────────────────────
    每条：问题 + 答案 + 「复制 / 改」。答案是要**直接粘进聊天框**的字，
    所以按原样保留换行（`pre-wrap`）—— 折成一段会把他排好的分行毁掉。 */
 .hrqa-todo {
-  margin: 0 0 14px; padding: 8px 12px; font-size: 13px; line-height: 1.6;
+  margin: 0 0 14px; padding: 8px 12px; font-size: var(--fs-small); line-height: 1.6;
   color: var(--caution); border: 1px dashed var(--caution);
 }
-.hrqa-err { margin: 0 0 12px; color: var(--lock); font-size: 13px; }
+.hrqa-err { margin: 0 0 12px; color: var(--lock); font-size: var(--fs-small); }
 .hrqa-item {
   padding: 12px 0; border-bottom: 1px solid var(--edge);
 }
 .hrqa-item:last-of-type { border-bottom: 0; }
-.hrqa-q { margin: 0 0 6px; color: var(--lit); font-size: 14px; font-weight: 600; }
+.hrqa-q { margin: 0 0 6px; color: var(--lit); font-size: var(--fs-content); font-weight: 600; }
 /* 没写的那几条要一眼认出来 —— 混在写好的里面等于没标。 */
 .hrqa-flag {
-  margin-left: 8px; font-size: 12px; font-style: normal; color: var(--caution);
+  margin-left: 8px; font-size: var(--fs-micro); font-style: normal; color: var(--caution);
 }
 .hrqa-a {
-  margin: 0 0 8px; color: var(--dim); font-size: 13.5px; line-height: 1.75;
+  margin: 0 0 8px; color: var(--dim); font-size: var(--fs-label); line-height: 1.75;
   white-space: pre-wrap;
 }
 .hrqa-a.is-blank { color: var(--faint); }
 .hrqa-edit {
   width: 100%; margin: 0 0 8px; padding: 8px 10px; resize: vertical;
-  font: inherit; font-size: 13.5px; line-height: 1.75;
+  font: inherit; font-size: var(--fs-label); line-height: 1.75;
   color: var(--lit); background: var(--bay); border: 1px solid var(--edge-strong);
   border-radius: 2px; white-space: pre-wrap;
 }
 .hrqa-edit:focus-visible { outline: 2px solid var(--data); outline-offset: 1px; }
 .hrqa-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .hrqa-btn {
-  padding: 4px 12px; cursor: pointer; font: inherit; font-size: 12.5px;
+  padding: 4px 12px; cursor: pointer; font: inherit; font-size: var(--fs-meta);
   color: var(--dim); background: transparent; border: 1px solid var(--edge-strong);
   border-radius: 2px;
 }
 .hrqa-btn:hover:not(:disabled) { color: var(--lit); border-color: var(--data); }
 .hrqa-btn:disabled { opacity: 0.45; cursor: default; }
 .hrqa-btn:focus-visible { outline: 2px solid var(--data); outline-offset: 2px; }
-.hrqa-foot { margin: 14px 0 0; color: var(--faint); font-size: 12.5px; line-height: 1.7; }
+.hrqa-foot { margin: 14px 0 0; color: var(--faint); font-size: var(--fs-meta); line-height: 1.7; }
 
 .deskbar {
   display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 24px;
@@ -1939,7 +2034,7 @@ body {
 .deskbtn {
   display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
   flex: 1 1 calc(33.333% - 10px); min-width: 280px; max-width: 100%; text-align: left; cursor: pointer;
-  padding: 10px 14px; font: inherit; font-size: 13.5px; line-height: 1.5;
+  padding: 10px 14px; font: inherit; font-size: var(--fs-label); line-height: 1.5;
   color: var(--dim); background: var(--panel); border: 1px solid var(--edge);
   border-radius: 2px;
 }
@@ -1949,7 +2044,7 @@ body {
 }
 .deskbtn:hover { border-color: var(--data); background: var(--panel-raised); }
 .deskbtn:focus-visible { outline: 2px solid var(--data); outline-offset: 2px; }
-.deskbtn-name { color: var(--lit); font-weight: 600; font-size: 14px; }
+.deskbtn-name { color: var(--lit); font-weight: 600; font-size: var(--fs-content); }
 .deskbtn-note { color: var(--dim); }
 /* 告警点亮整颗按钮 —— 一枚小圆点在这一排里会被当成装饰。 */
 .deskbtn[data-alarm] { border-color: var(--lock); }

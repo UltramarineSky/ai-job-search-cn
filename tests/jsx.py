@@ -149,3 +149,40 @@ def attr_expr(open_tag: str, name: str):
                 return open_tag[start:i].strip()
         i += 1
     return None
+
+
+def element_color(src: str, needle: str, css: str):
+    """包着 `needle` 的那个元素，最终拿到哪个颜色令牌（返回 `var(--x)` 形状）。
+
+    判据该问「这句话是什么颜色」，不该问「颜色写在哪」。2026-09-30 把静态
+    inline style 收进 class 之后，两条按 `style=` 或固定字符窗口找颜色的证人
+    当场失效——而颜色其实一个字没变。所以这里两条路都认：
+
+      1. 元素自己带 `style={{ color: "var(--x)" }}` → 取它（内联压过一切）；
+      2. 否则拿它的 class 去 CSS 里找**最后**一条盖住它的 `color: var(--x)`
+         （文件里后写的赢，同特异性时贴近层叠顺序）。
+
+    `src` 要先剥过 JSX 注释（`_srcscan.strip_comments` 就够）——解释某条规则的
+    注释里常常也写着那句话，`index()` 会先命中注释。这个坑本仓库记过好几轮。
+    找不到来源时返回 **None**：调用方要把它当失败断言，不能当「没问题」。
+    """
+    i = src.index(needle)
+    start = src.rindex("<", 0, i)
+    tag = src[start:src.index(">", start)]
+    m = re.search(r"color:\s*[\"']?(var\(--[a-z0-9-]+\))", tag)
+    if m:
+        return m.group(1)
+    cm = re.search(r'className="([^"]+)"', tag)
+    if not cm:
+        return None
+    classes = set(re.findall(r"[a-zA-Z][\w-]*", cm.group(1)))
+    body = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    found = None
+    for sel, block in re.findall(r"([^{}]+)\{([^{}]*)\}", body):
+        sel_cls = set(re.findall(r"\.([a-zA-Z][\w-]*)", sel))
+        if not sel_cls or not sel_cls <= classes:
+            continue
+        c = re.search(r"color:\s*var\((--[a-z0-9-]+)\)", block)
+        if c:
+            found = "var(" + c.group(1) + ")"
+    return found
