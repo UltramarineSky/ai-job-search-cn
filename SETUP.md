@@ -563,9 +563,36 @@ agy 读**用户主目录**下的配置，本仓库不写那儿。它「预批准
 #   --sandbox                      开终端沙箱限制
 #   --dangerously-skip-permissions 全部自动批准（本仓库不推荐，等于把闸门拆了）
 # 下面不含 `Skill(...)` 那一条 —— 那是 Claude 的技能授权，agy 没有对应物。
-  node .agents/skills/liepin-search/cli/src/cli.ts
+  Agent
+  bun --version
   bun run .agents/skills/liepin-search/cli/src/cli.ts
+  node --version
+  node .agents/skills/liepin-search/cli/src/cli.ts
   pdftotext
+  python tools/applied_jds.py
+  python tools/archive.py
+  python tools/audit_pipeline.py
+  python tools/check_outreach.py
+  python tools/doctor.py
+  python tools/export_web_data.py
+  python tools/fetch_details.py
+  python tools/followups.py
+  python tools/gap_split.py
+  python tools/jd_store.py
+  python tools/outreach_header.py
+  python tools/portal_budget.py
+  python tools/prescreen.py
+  python tools/query_yield.py
+  python tools/resume_refresh.py
+  python tools/score.py
+  python tools/serve.py
+  python tools/stale_materials.py
+  python tools/template_usage.py
+  python tools/trim_opening.py
+  python tools/writeback.py
+  typst
+  WebFetch
+  WebSearch
 ```
 
 最后那条 `--dangerously-skip-permissions` 等于把闸门拆了，本仓库不推荐。

@@ -44,9 +44,10 @@ ROOT = Path(__file__).resolve().parent.parent
 #: `test_every_allow_entry_has_a_source`，不是这里安静地留着另一套写法。
 SETTINGS_ALLOW = (
     "Skill(job-application-assistant)",
-    *_entries.PORTAL_BASH,
-    "Bash(pdftotext:*)",
+    *_entries.shared_grants(),
 )
+
+SETTINGS_DEFAULT_MODE = "acceptEdits"
 
 #: Gemini CLI 的权限文件**不生成**（2026-09-29 Task 9 Step 1 取证后撤回），
 #: 那家工具本身也在 2026-09-30 从本仓库的支持名单里整条删掉。
@@ -104,7 +105,10 @@ SNIPPET_TOOLS = ("claude", "codex", "agy")
 
 
 def _settings_json() -> str:
-    return json.dumps({"permissions": {"allow": list(SETTINGS_ALLOW)}},
+    return json.dumps({"permissions": {
+                          "defaultMode": SETTINGS_DEFAULT_MODE,
+                          "allow": list(SETTINGS_ALLOW),
+                      }},
                       ensure_ascii=False, indent=2) + "\n"
 
 

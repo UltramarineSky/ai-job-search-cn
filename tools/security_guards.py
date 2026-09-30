@@ -72,10 +72,24 @@ errors: list[str] = []
 #
 # 报错按「顶层键.列表键」拼路径（Claude 那份就拼出 `permissions.allow must be a list
 # of strings`），所以每条消息都指得到是哪个文件的哪个键下的哪一条。
+#: `permissions.defaultMode` 允许的取值。**故意不含 `bypassPermissions`**：
+#: 那等于把这份文件从「逐个入口预批」变成「全不询问」，而仓库的立场是
+#: CONTRIBUTING.md「限定到入口，不开宽授权」。要放那一档，得先有人来改这里，
+#: 并且当场把 `test_a_bypass_default_mode_is_rejected` 变红的原因写清楚。
+SCALAR_LEAVES = {"defaultMode": {"default", "acceptEdits", "plan"}}
+
+
 SETTINGS_KEY_SCHEMAS = {
     ".claude/settings.json": {
         "top": {"permissions"},
+        # allow = 预批（要对着清单比出处）；defaultMode = 标量，取值面在下面收紧。
+        #
+        # 2026-09-30 按本文件自己的规定加宽：报错文案一直写着「defaultMode 能整个
+        # 关掉询问，要加就在同一次 PR 里显式加进 SETTINGS_KEY_SCHEMAS」。这次加的是
+        # `acceptEdits`（文件编辑不再逐个问），**不是** bypassPermissions ——
+        # 后者在 SCALAR_LEAVES 里根本不允许，见那里。
         "leaf": {"allow"},
+        "scalars": SCALAR_LEAVES,
         "required": True,
     },
     # Gemini 那一份**本仓库不生成**（2026-09-29 读安装包 schema 取证后撤回：
@@ -109,6 +123,15 @@ SETTINGS_KEY_SCHEMAS = {
 }
 
 PERMISSION_FILES = tuple(SETTINGS_KEY_SCHEMAS)
+
+#: 每个权限文件里**哪些键是「预批」**（要对着派生清单比出处）。
+#: `None` = 没有取证结论，整份文件都当预批收（`.gemini/settings.json` 就是：
+#: 那一家我们不生成，但谁手放一份宽授权仍然要红）。
+#: 标量键（`defaultMode`）也不在这里——它不是命令条目，取值面由 scalars 单独管。
+GRANT_LEAVES = {
+    ".claude/settings.json": {"allow"},
+    ".gemini/settings.json": None,
+}
 
 #: 参照系（生成器的清单）要 import 兄弟模块，但**模块级不 import**：需要的时候在
 #: 函数里惰性取，取不到就报成一条守卫失败（不是 traceback，也不是「跳过」——
@@ -197,9 +220,20 @@ def permission_entries() -> dict[str, list[str]]:
         except (OSError, json.JSONDecodeError):
             continue                      # 形状问题由 _check_settings_file 报，这里不重复
         vals: list[str] = []
-        _walk_strings(data, vals)
+        grants = GRANT_LEAVES.get(rel)
+        if grants is None:
+            # 这一家没有「哪个键是预批」的取证结论 → 保持原样：整份递归收，
+            # 任何字符串都当条目比出处。想蒙过去得同时改 schema。
+            _walk_strings(data, vals)
+        else:
+            for top, node in data.items():
+                if isinstance(node, dict):
+                    for leaf, value in node.items():
+                        if leaf in grants and isinstance(value, list):
+                            vals.extend(x for x in value if isinstance(x, str))
         out[rel] = vals
     return out
+
 
 # Personal-data ignore rules that must never disappear from .gitignore.
 REQUIRED_IGNORE_RULES = [
@@ -348,7 +382,8 @@ def _check_settings_file(rel: str) -> None:
         if not isinstance(node, dict):
             errors.append(f"{rel}: {top} must be an object")
             continue
-        for key in sorted(set(node) - schema["leaf"]):
+        for key in sorted(set(node) - schema["leaf"]
+                          - set(schema.get("scalars") or {})):
             errors.append(
                 f"{rel}: unreviewed permissions key {key!r} under {top!r}. 'defaultMode' "
                 "can disable prompting entirely and 'additionalDirectories' widens the "
@@ -359,6 +394,16 @@ def _check_settings_file(rel: str) -> None:
             value = node[leaf]
             if not isinstance(value, list) or not all(isinstance(e, str) for e in value):
                 errors.append(f"{rel}: {top}.{leaf} must be a list of strings")
+        for key, allowed_values in sorted((schema.get("scalars") or {}).items()):
+            if key not in node:
+                continue
+            value = node[key]
+            if value not in allowed_values:
+                errors.append(
+                    f"{rel}: {top}.{key}={value!r} 不在本仓库认可的取值里 "
+                    f"{sorted(allowed_values)}。`bypassPermissions` 故意不在——"
+                    "它把「逐个入口预批」变成「全不询问」，要那一档请连这里的取值面"
+                    "一起改，别只改生成物。")
 
     # 第二条判据：每一条都要有出处。`permission_entries()` 整份递归收，
     # 所以「藏在别的键下的一个字符串数组」也会被当作条目对着清单比 —— 想蒙过去

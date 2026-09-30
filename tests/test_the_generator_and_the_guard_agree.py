@@ -24,7 +24,8 @@ sys.path.insert(0, str(ROOT / "tools"))
 import security_guards  # noqa: E402
 
 
-def _mini_tree(settings_entries: list[str]) -> Path:
+def _mini_tree(settings_entries: list[str],
+               extra_permissions: dict | None = None) -> Path:
     """一棵能跑守卫的最小树：`tools/` + `workflows/` + `.claude/settings.json`。
 
     守卫要拿生成器的清单比条目，所以 `tools/` 得整份带上（与
@@ -37,8 +38,10 @@ def _mini_tree(settings_entries: list[str]) -> Path:
                     ignore=shutil.ignore_patterns("__pycache__"))
     shutil.copytree(ROOT / "workflows", tmp / "workflows")
     (tmp / ".claude").mkdir()
+    permissions = {"allow": settings_entries}
+    permissions.update(extra_permissions or {})
     (tmp / ".claude" / "settings.json").write_text(
-        json.dumps({"permissions": {"allow": settings_entries}}), encoding="utf-8")
+        json.dumps({"permissions": permissions}), encoding="utf-8")
     (tmp / ".gitignore").write_text(
         "\n".join(security_guards.REQUIRED_IGNORE_RULES), encoding="utf-8")
     return tmp
@@ -249,6 +252,63 @@ class TheSnippetsArePerTool(unittest.TestCase):
                          "SETUP.md 里那段与 `--print agy` 现在的输出不一致 —— "
                          "跑那条命令重新粘一次")
 
+
+class TheDefaultModeIsNarrow(unittest.TestCase):
+    """2026-09-30 加宽的那一样：`permissions.defaultMode`。
+
+    加宽是按本文件守卫自己规定的路子走的（报错文案一直写着「defaultMode 能整个
+    关掉询问，要加就在同一次 PR 里显式加进 SETTINGS_KEY_SCHEMAS」）。这一类盯的是
+    加宽之后**别把原来的天花板一起放掉**。
+
+    同一天先加过一份 `deny`（8 条），随后按用户判断撤掉了：那些形状本来就不在
+    allow 里，而未列即询问 —— deny 只是把「问一句」变成「直接拒」，今天什么都不挡。
+    「防将来放宽派生规则」那半句也站不住，因为守那一层的是 `_rule_for` 拒收
+    解释器内联参数，加上下面这条控制用例。留着一份不咬人的硬拒，只会让人以为
+    有人在挡。
+    """
+
+    def _tree(self, entries, extra=None):
+        tmp = _mini_tree(entries, extra)
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        return tmp
+
+    def test_a_wide_grant_under_allow_is_still_red(self):
+        """控制用例：defaultMode 加宽之后，allow 那半边必须**照样**拦宽授权。
+
+        这条是「撤掉 deny 之后天花板还在」的证据：`Bash(python tools/:*)` 把整个
+        `tools/` 授权出去，key 合法、值不是清单能推出的 → 仍然红。
+        """
+        import gen_entries
+        entries = list(gen_entries.SETTINGS_ALLOW) + ["Bash(python tools/:*)"]
+        res = _run(self._tree(entries, {"defaultMode": gen_entries.SETTINGS_DEFAULT_MODE}))
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("Bash(python tools/:*)", res.stdout)
+
+    def test_bypass_permissions_mode_is_rejected(self):
+        """`acceptEdits` 过、`bypassPermissions` 红。取值面就是这条的判据。"""
+        import gen_entries
+        self.assertIn(gen_entries.SETTINGS_DEFAULT_MODE,
+                      security_guards.SCALAR_LEAVES["defaultMode"],
+                      "生成物用的取值不在认可面里——两边飘了")
+        self.assertNotIn("bypassPermissions", security_guards.SCALAR_LEAVES["defaultMode"],
+                         "认可面里出现了「全不询问」，这份文件就不再是逐个入口预批了")
+        res = _run(self._tree(list(gen_entries.SETTINGS_ALLOW),
+                              {"defaultMode": "bypassPermissions"}))
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("bypassPermissions", res.stdout)
+
+    def test_the_shipped_file_has_no_deny_key(self):
+        """撤掉的东西别悄悄长回来：生成物里不该再有 `deny`。
+
+        不是「deny 有害」，是**这份文件里没有不咬人的条目**这一条更可检查。
+        哪天真要加，得连带说清它今天挡掉了什么一次真实调用。
+        """
+        import gen_entries
+        self.assertFalse(hasattr(gen_entries, "SETTINGS_DENY"),
+                         "SETTINGS_DENY 又回来了——要么补上「它今天挡了什么」的证据，"
+                         "要么删干净")
+        data = json.loads((ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        self.assertNotIn("deny", data["permissions"])
 
 if __name__ == "__main__":
     unittest.main()

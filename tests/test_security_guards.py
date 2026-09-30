@@ -271,12 +271,29 @@ class SettingsSurfaceTests(GuardRepoFixture):
         self.assertIn("unreviewed settings key 'hooks'", result.stdout)
 
     def test_bypass_permissions_default_mode_fails(self):
+        """`defaultMode` 现在是**审过的键**（2026-09-30 加宽），所以拦它的不再是
+        「这个键没审过」，而是「这个取值不在认可面里」。
+
+        原来这条靠 `unreviewed permissions key 'defaultMode'` 变红。加宽之后那句话
+        不会再出现——如果只把断言删掉，这一格就变成「defaultMode 随便写都行」，
+        比原来松。所以这里改断**取值**，并补一条正向：`acceptEdits` 必须过，
+        否则「红」可能只是这个键整个被禁了，而不是收窄到只认那一档。
+        """
         self._write_raw({"permissions": {
             "allow": sorted(gen_entries.SETTINGS_ALLOW),
             "defaultMode": "bypassPermissions"}})
         result = run_guards(self.root)
         self.assertEqual(result.returncode, 1)
-        self.assertIn("unreviewed permissions key 'defaultMode'", result.stdout)
+        self.assertIn("bypassPermissions", result.stdout)
+        self.assertIn("不在本仓库认可的取值", result.stdout)
+
+    def test_accept_edits_default_mode_passes(self):
+        """正向对照：认可面里那一档必须真的过。"""
+        self._write_raw({"permissions": {
+            "allow": sorted(gen_entries.SETTINGS_ALLOW),
+            "defaultMode": gen_entries.SETTINGS_DEFAULT_MODE}})
+        result = run_guards(self.root)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_additional_directories_fails(self):
         self._write_raw({"permissions": {

@@ -100,6 +100,25 @@ PORTAL_BASH = (
     "Bash(bun run .agents/skills/liepin-search/cli/src/cli.ts:*)",
 )
 
+#: 跨壳共用的授权：**凡某个壳里已经批过的 Bash 条目，壳外也该批**。
+#:
+#: 为什么要有这一份。各壳的 `allowed-tools` 只在「以 Skill 方式调用那个壳」时生效，
+#: 于是同一个动作换个入口就要重新点一次授权：AGENTS.md 要求会话开始先跑的
+#: `python tools/doctor.py`、数据变了重导面板的 `export_web_data.py`、
+#: `/job-dashboard` 让 AI 自己起的 `serve.py`，都不发生在任何壳里——
+#: 2026-09-30 用户报「每步都要授权」，主因就是这个入口差。
+#:
+#: 上一版这里手抄了三条命令名。那是个止疼片：它只治「我此刻发现的三个」，
+#: 而真正的规则是「壳内已批 = 仓库认定这个动作安全」，壳外没理由重新怀疑一遍。
+#: 现在改成从 `allowed_tools()` 取并集，正本仍然只有一份（每个壳的工作流围栏
+#: + `extra_tools`），这里不新增任何条目、也不删任何一条。
+#:
+#: 天花板由派生那头守着，不在这里：`_rule_for` 拒收 `python -c`（那授权的是任意
+#: 内联代码）、含 `<占位符>` 的路径、以及不从仓库根算起的脚本；
+#: `test_no_entry_opens_a_whole_directory` 拦 `tools/:*` 与 `Skill(*)`。
+#: 所以这份表再长，也只会长到「22 个仓库自己的入口脚本」这一级。
+
+
 RUNNERS = ("python", "python3", "node", "bun", "npm", "npx",
            "typst", "pdftotext", "pdftoppm")
 
@@ -466,6 +485,35 @@ def _rule_for(cmd: str):
         return (f"Bash(bun run {arg}:*)" if prog == "bun"
                 else f"Bash(node {arg}:*)")
     return None
+
+
+#: 跨壳表里**该带**的非 Bash 工具。判据只有一条：它今天真的会弹。
+#:
+#:   · `WebFetch` / `WebSearch` —— 抓 posting 与搜岗的默认动作，各壳都批了，
+#:     壳外（不通过 Skill 进来的普通对话）却要逐个点；
+#:   · `Agent` —— AGENTS.md 能力对照表把「并行子代理 / 双角色审稿」当核心机制，
+#:     批它等于让那条机制在壳外也能跑。
+#:
+#: **不带**的：`Edit` / `Write`（`defaultMode: acceptEdits` 已经管了，列进来是第二份
+#: 授权同一个动作）；`Read` / `Glob` / `Grep`（只读检索，按我的判断 Claude 默认不问，
+#: **这一条我没实测**——真测出来会弹，加进来的成本是一行）；`AskUserQuestion`
+#: （它本来就是问用户，不是要授权的动作）。
+ALSO_SHARED = ("WebFetch", "WebSearch", "Agent")
+
+
+def shared_grants() -> tuple:
+    """跨壳共用的授权：全部生成壳的 Bash 并集 + `ALSO_SHARED`。
+
+    条目一律**从 `allowed_tools()` 取**，不在这里写第二遍：`_rule_for` 改判据时
+    只有正本跟着变，这份派生品自动对齐（`PORTAL_BASH` 那条注释记过手抄的教训）。
+    排序稳定，生成物逐字节可比。
+    """
+    out = set(ALSO_SHARED)
+    for name in generated_names():
+        for tool in allowed_tools(name):
+            if tool.startswith("Bash("):
+                out.add(tool)
+    return tuple(sorted(out))
 
 
 def derives_nothing(cmd: str) -> bool:

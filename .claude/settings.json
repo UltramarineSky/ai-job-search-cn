@@ -1,10 +1,38 @@
 {
   "permissions": {
+    "defaultMode": "acceptEdits",
     "allow": [
       "Skill(job-application-assistant)",
-      "Bash(node .agents/skills/liepin-search/cli/src/cli.ts:*)",
+      "Agent",
+      "Bash(bun --version)",
       "Bash(bun run .agents/skills/liepin-search/cli/src/cli.ts:*)",
-      "Bash(pdftotext:*)"
+      "Bash(node --version)",
+      "Bash(node .agents/skills/liepin-search/cli/src/cli.ts:*)",
+      "Bash(pdftotext:*)",
+      "Bash(python tools/applied_jds.py:*)",
+      "Bash(python tools/archive.py:*)",
+      "Bash(python tools/audit_pipeline.py:*)",
+      "Bash(python tools/check_outreach.py:*)",
+      "Bash(python tools/doctor.py:*)",
+      "Bash(python tools/export_web_data.py:*)",
+      "Bash(python tools/fetch_details.py:*)",
+      "Bash(python tools/followups.py:*)",
+      "Bash(python tools/gap_split.py:*)",
+      "Bash(python tools/jd_store.py:*)",
+      "Bash(python tools/outreach_header.py:*)",
+      "Bash(python tools/portal_budget.py:*)",
+      "Bash(python tools/prescreen.py:*)",
+      "Bash(python tools/query_yield.py:*)",
+      "Bash(python tools/resume_refresh.py:*)",
+      "Bash(python tools/score.py:*)",
+      "Bash(python tools/serve.py:*)",
+      "Bash(python tools/stale_materials.py:*)",
+      "Bash(python tools/template_usage.py:*)",
+      "Bash(python tools/trim_opening.py:*)",
+      "Bash(python tools/writeback.py:*)",
+      "Bash(typst:*)",
+      "WebFetch",
+      "WebSearch"
     ]
   }
 }
